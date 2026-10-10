@@ -4,7 +4,12 @@
 
 This is a hackathon **prototype source release**, not a clinical product. It contains the runnable FastAPI-served PWA, demo API, tests, documentation, native Android source, Docker configuration, and a debug-signed Android APK. The APK is build-verified and unit-tested but has not been installed or exercised on a device/emulator.
 
-## Latest Android build-fix and verification
+## Android 0.2.0-demo (10 October 2026)
+
+- Rebuilt the native app around separate maternal and newborn workflows, four explicit result modes, a fail-closed typed model contract (no model bundled), Camera2 `ImageReader` pair capture with exposure locking and validation, objective image-quality checks, Room v2 offline queue with WorkManager sync, backend counselling/referral integration, escalation-only referral rules, and pseudonymous FHIR export.
+- Verified: 101 unit tests pass (including a live-backend referral-PDF test), lint 0 errors; hand-held movement between the flash pair is now corrected instead of forcing a retake, Room 1→2 migration SQL checked on SQLite, debug APK `0.2.0-demo` (12.1 MiB) signature-checked and scanned for secrets. Not yet installed on a device. See `docs/ANDROID_BUILD.md`.
+
+## Earlier Android build-fix and verification (0.1.0)
 
 - Fixed Kotlin syntax across Android source and tests: `in` is a Kotlin keyword, so the first package segment is now escaped with backticks while the Android application ID stays `in.abhaynayan.app`.
 - Tuned Gradle worker/memory settings for the constrained build environment.

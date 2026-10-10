@@ -4,7 +4,7 @@
 
 ## Non-negotiable use boundary
 
-- Every Hb and bilirubin number in the demo is a fixed synthetic fixture chosen by the user. It is **not derived** from a person, image, camera pixels, optical features, or a clinically approved model.
+- Every Hb and bilirubin number in the demo is a fixed synthetic fixture chosen by the user. On Android, real/local profiles never receive a number: their results are recorded as `DISABLED_NO_VALID_MODEL`. It is **not derived** from a person, image, camera pixels, optical features, or a clinically approved model.
 - Demo risk tags are software examples only. They are not clinical risk categories, triage instructions, thresholds, or validated referral rules.
 - Never use an app value to diagnose, reassure, triage, delay care, start/stop/change treatment, or override a clinician.
 - Clinical confirmation must use appropriate established testing (for example, CBC for hemoglobin or serum bilirubin testing as appropriate) and qualified clinician review under local protocol. This prototype does not replace those services.
@@ -17,14 +17,14 @@
 - The result page names the inference mode, states that the number did not come from pixels, and shows a safety note and confirmation step.
 - A real/local patient profile may use camera quality and feature visualization only; the synthetic estimate action is disabled for that profile.
 - Optical RGB/HSV/Lab/YCrCb summaries are uncalibrated engineering features. Manual ROI guides are not anatomical segmentation. Brightness/blur scores are not validated capture-quality standards.
-- The PWA's flash/ambient concept is visualization-only. Native Android attempts sequential Camera2 preview snapshots with a brief torch toggle, but it does not lock exposure/ISO or synchronize still captures; its clipped F−A output is not clinical color correction or proven lighting invariance.
+- The PWA's flash/ambient concept is visualization-only. Native Android (0.2.0) captures an ambient + torch `ImageReader` pair only when it can hold exposure constant (manual sensor or AE/AWB lock), and rejects the pair when exposure, ISO, timing, alignment, clipping, or flash signal checks fail (see `docs/ANDROID_ML_STATUS.md`). Even an accepted pair and its exploratory erythema index are research visualization only: not clinical color correction, not proven lighting invariance, and never converted into a biomarker value.
 - No approved TFLite model is bundled. The optional TFLite interface does not guess tensor shape or output mapping in the absence of a model artifact and model card.
 - Performance figures are not benchmarked. The README/model page labels the small research baseline precisely and does not promote it as accuracy for patient screening.
 
 ## Data handling
 
 - Use the synthetic demo profile for presentations.
-- Patient names/demographics in the optional local profile are stored in this browser's IndexedDB/localStorage only; browser storage is not encrypted by this prototype. Android's local Room database is also not encrypted. The included Android APK is a debug build and has not been device-runtime tested. Do not store real patient information in either client. The browser camera/import image and Android Camera2 preview snapshots are held in memory during local processing and are not saved with a screening record. The current web app persists only minimal capture-source/quality metadata locally; the RGB/HSV/Lab feature vector is not persisted.
+- Patient names/demographics in the optional local profile are stored in this browser's IndexedDB/localStorage only; browser storage is not encrypted by this prototype. Android's local Room database is also not encrypted. The included Android APK is a debug build and has not been device-runtime tested. Do not store real patient information in either client. Android profiles use random pseudonymous IDs; an optional nickname stays on the phone and is never synced or exported. The browser camera/import image and Android Camera2 frames are held in memory during local processing and are not saved with a screening record. The current web app persists only minimal capture-source/quality metadata locally; the RGB/HSV/Lab feature vector is not persisted.
 - The backend has no image-upload endpoint. `/api/counselling` does not accept image data or direct patient identifiers. `/api/sync` uses a pseudonymous patient ID and synthetic fixture fields only; the client strips local FHIR bundle/profile details before sync.
 - Local JSON backup and local print/PDF may contain locally stored names if the operator elects to include them; handle such files as sensitive. Server-generated referral PDFs use the pseudonymous ID, not the local patient name.
 - The backend has no authentication or access-control system. Do not expose it to public networks or use it for real patient data.

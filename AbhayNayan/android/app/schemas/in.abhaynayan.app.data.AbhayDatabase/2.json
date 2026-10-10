@@ -1,0 +1,346 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 2,
+    "identityHash": "cf685ce9286e66dc475f0198d0597bca",
+    "entities": [
+      {
+        "tableName": "patients",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`patientId` TEXT NOT NULL, `displayName` TEXT NOT NULL, `isSyntheticDemo` INTEGER NOT NULL, `consentRecorded` INTEGER NOT NULL, `createdAtUtc` TEXT NOT NULL, `subjectKind` TEXT NOT NULL DEFAULT 'UNSPECIFIED', PRIMARY KEY(`patientId`))",
+        "fields": [
+          {
+            "fieldPath": "patientId",
+            "columnName": "patientId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "displayName",
+            "columnName": "displayName",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isSyntheticDemo",
+            "columnName": "isSyntheticDemo",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "consentRecorded",
+            "columnName": "consentRecorded",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAtUtc",
+            "columnName": "createdAtUtc",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "subjectKind",
+            "columnName": "subjectKind",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'UNSPECIFIED'"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "patientId"
+          ]
+        }
+      },
+      {
+        "tableName": "screenings",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`screeningId` TEXT NOT NULL, `patientId` TEXT NOT NULL, `screeningType` TEXT NOT NULL, `estimate` REAL, `unit` TEXT NOT NULL, `demoTag` TEXT NOT NULL, `confidencePlaceholder` REAL NOT NULL, `captureQualityProxy` REAL NOT NULL, `modelMode` TEXT NOT NULL, `synthetic` INTEGER NOT NULL, `confirmationRequired` INTEGER NOT NULL, `createdAtUtc` TEXT NOT NULL, `resultMode` TEXT NOT NULL DEFAULT 'DEMO_SYNTHETIC', `caseId` TEXT, `modelVersion` TEXT NOT NULL DEFAULT 'fixed-demo-fixtures-v1', `qualityStatus` TEXT NOT NULL DEFAULT 'NOT_RECORDED', `captureSource` TEXT NOT NULL DEFAULT '', `differentialStatus` TEXT NOT NULL DEFAULT 'NOT_RECORDED', `metadataJson` TEXT NOT NULL DEFAULT '{}', `referralUrgency` TEXT NOT NULL DEFAULT 'CONFIRMATORY_TESTING', `syncState` TEXT NOT NULL DEFAULT 'PENDING', `syncAttempts` INTEGER NOT NULL DEFAULT 0, `lastSyncError` TEXT, `lastSyncAttemptAtUtc` TEXT, `serverConfirmedAtUtc` TEXT, `workerId` TEXT NOT NULL DEFAULT 'demo-worker', `phc` TEXT NOT NULL DEFAULT 'Demo PHC', PRIMARY KEY(`screeningId`))",
+        "fields": [
+          {
+            "fieldPath": "screeningId",
+            "columnName": "screeningId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "patientId",
+            "columnName": "patientId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "screeningType",
+            "columnName": "screeningType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "estimate",
+            "columnName": "estimate",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "unit",
+            "columnName": "unit",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "demoTag",
+            "columnName": "demoTag",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "confidencePlaceholder",
+            "columnName": "confidencePlaceholder",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "captureQualityProxy",
+            "columnName": "captureQualityProxy",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "modelMode",
+            "columnName": "modelMode",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "synthetic",
+            "columnName": "synthetic",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "confirmationRequired",
+            "columnName": "confirmationRequired",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAtUtc",
+            "columnName": "createdAtUtc",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "resultMode",
+            "columnName": "resultMode",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'DEMO_SYNTHETIC'"
+          },
+          {
+            "fieldPath": "caseId",
+            "columnName": "caseId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "modelVersion",
+            "columnName": "modelVersion",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'fixed-demo-fixtures-v1'"
+          },
+          {
+            "fieldPath": "qualityStatus",
+            "columnName": "qualityStatus",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'NOT_RECORDED'"
+          },
+          {
+            "fieldPath": "captureSource",
+            "columnName": "captureSource",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "''"
+          },
+          {
+            "fieldPath": "differentialStatus",
+            "columnName": "differentialStatus",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'NOT_RECORDED'"
+          },
+          {
+            "fieldPath": "metadataJson",
+            "columnName": "metadataJson",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'{}'"
+          },
+          {
+            "fieldPath": "referralUrgency",
+            "columnName": "referralUrgency",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'CONFIRMATORY_TESTING'"
+          },
+          {
+            "fieldPath": "syncState",
+            "columnName": "syncState",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'PENDING'"
+          },
+          {
+            "fieldPath": "syncAttempts",
+            "columnName": "syncAttempts",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "lastSyncError",
+            "columnName": "lastSyncError",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "lastSyncAttemptAtUtc",
+            "columnName": "lastSyncAttemptAtUtc",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "serverConfirmedAtUtc",
+            "columnName": "serverConfirmedAtUtc",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "workerId",
+            "columnName": "workerId",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'demo-worker'"
+          },
+          {
+            "fieldPath": "phc",
+            "columnName": "phc",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'Demo PHC'"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "screeningId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_screenings_patientId",
+            "unique": false,
+            "columnNames": [
+              "patientId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_screenings_patientId` ON `${TABLE_NAME}` (`patientId`)"
+          },
+          {
+            "name": "index_screenings_createdAtUtc",
+            "unique": false,
+            "columnNames": [
+              "createdAtUtc"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_screenings_createdAtUtc` ON `${TABLE_NAME}` (`createdAtUtc`)"
+          },
+          {
+            "name": "index_screenings_syncState",
+            "unique": false,
+            "columnNames": [
+              "syncState"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_screenings_syncState` ON `${TABLE_NAME}` (`syncState`)"
+          }
+        ]
+      },
+      {
+        "tableName": "referrals",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`referralId` TEXT NOT NULL, `screeningId` TEXT NOT NULL, `createdAtUtc` TEXT NOT NULL, `language` TEXT NOT NULL, `urgency` TEXT NOT NULL, `nextStep` TEXT NOT NULL, `serverState` TEXT NOT NULL, `pdfPath` TEXT, `lastError` TEXT, PRIMARY KEY(`referralId`))",
+        "fields": [
+          {
+            "fieldPath": "referralId",
+            "columnName": "referralId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "screeningId",
+            "columnName": "screeningId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAtUtc",
+            "columnName": "createdAtUtc",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "language",
+            "columnName": "language",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "urgency",
+            "columnName": "urgency",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "nextStep",
+            "columnName": "nextStep",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "serverState",
+            "columnName": "serverState",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "pdfPath",
+            "columnName": "pdfPath",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "lastError",
+            "columnName": "lastError",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "referralId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_referrals_screeningId",
+            "unique": false,
+            "columnNames": [
+              "screeningId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_referrals_screeningId` ON `${TABLE_NAME}` (`screeningId`)"
+          }
+        ]
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'cf685ce9286e66dc475f0198d0597bca')"
+    ]
+  }
+}

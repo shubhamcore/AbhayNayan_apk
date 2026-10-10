@@ -1,46 +1,91 @@
-# Native Android prototype
+# AbhayNayan — native Android app
 
-This is a Kotlin/Compose Android shell for the AbhayNayan demo. It uses Room, Camera2 preview snapshots, a manual target guide, a local brightness/edge quality proxy, fixed synthetic case fixtures, and Android TextToSpeech. It has no network permission, no image upload, no active clinical model, and no patient-image persistence. The result numbers are fixed synthetic fixtures, never generated from camera pixels or optical features.
+An offline-first screening workflow and counselling assistant for ASHA workers, ANMs, and PHC medical officers. It has separate **maternal anemia** and **newborn jaundice** workflows. Kotlin + Jetpack Compose (Material 3), Room, Camera2, WorkManager; no WebView.
 
-## Build and test
+> **Safety boundary.** This is a prototype and is **not clinically validated**. It does **not** measure hemoglobin or bilirubin: no valid model exists for either (see [../docs/ANDROID_ML_STATUS.md](../docs/ANDROID_ML_STATUS.md)). Real profiles get photo-quality checks, danger-sign-based referral advice, and counselling only. Synthetic demo profiles may show fixed fixture values labelled `FIXED DEMO VALUE · NOT FROM IMAGE`. Always confirm with an appropriate test (CBC/point-of-care Hb; serum or transcutaneous bilirubin) and follow local protocol. See [../docs/SAFETY.md](../docs/SAFETY.md).
 
-Verified 10 October 2026 with JDK 17, Gradle 8.13, and Android SDK platform 36. The Kotlin package/import syntax was fixed for the reserved `in` package segment, and Gradle memory settings were tuned for this constrained build environment.
+## What is implemented
 
-From this directory:
+- **Home:** branding, online/offline state, server status, both workflow entry points, recent records, sync counters (pending / failed / synced / phone-only), language (English · हिन्दी · भोजपुरी), help & safety, settings, and app/model version.
+- **Guided workflow (7 steps):** profile → details → prepare → capture → image checks → analysis → result, then save → counselling & referral. Back/Cancel are available at every step, with Retake on the checks screen, Retry on the analysis screen, and Save on the result screen.
+  - **Maternal:** pregnancy status, optional gestational week, maternal danger signs.
+  - **Newborn:** age in hours (required, ≤ 672), optional gestational age at birth, visible jaundice yes/no, IMNCI-style danger signs. Visible jaundice under 24 h or any danger sign shows an **urgent referral** banner immediately.
+- **Result modes:** `DEMO_SYNTHETIC`, `EXPERIMENTAL_RESEARCH_ONLY`, `VALIDATED_FOR_INTENDED_USE`, `DISABLED_NO_VALID_MODEL`, each with its own banner; provenance, quality status, limitations, and next step are always shown.
+- **Camera:** rear Camera2 with a `YUV_420_888` `ImageReader`. It reads capabilities (hardware level, manual sensor, AE/AWB lock, flash). The ambient + torch pair is captured with exposure held constant, or the app falls back to a single frame and says so. The camera is released on pause/dispose. Gallery import (JPEG/PNG/WebP) is also available, and demo profiles can use a synthetic colour chart.
+- **Image checks:** too small, too dark, too bright, glare, blur, target missing, and movement between frames, each with a plain-language reason and Retake. The worker confirms the target region manually; there is no landmark model.
+- **Offline-first storage:** Room v2 (auto-migrated from v1; existing records kept). Records are `PENDING → SYNCING → SYNCED` or `FAILED`, or `LOCAL_ONLY` when the backend contract cannot accept them. The WorkManager sync is duplicate-safe.
+- **Backend:** health, sync, counselling (Gemini runs server-side only), referral + PDF link, and dashboard counts. See [../docs/ANDROID_API_INTEGRATION.md](../docs/ANDROID_API_INTEGRATION.md).
+- **Counselling:** on-device text in three languages (the demo text matches the backend fallback exactly). Server text is used when available. Android TTS has play/stop, with a Hindi voice used for Bhojpuri when needed.
+- **Referral & interoperability:** a structured referral summary to share, a server referral brief for demo records, and pseudonymous FHIR R4-style JSON with the same resources and IDs as the backend. Records without an estimate use `dataAbsentReason`.
+- **Privacy:** photos are held in memory only and are never saved or uploaded. Profiles get random IDs, and nicknames never leave the phone. Logs are redacted (`SafeLog`). Backup/device transfer is excluded, cleartext is allowed in debug builds only for local development hosts, and there are no API keys in the app.
+
+## Source layout (`app/src/main/java/in/abhaynayan/app/`)
+
+| Path | Contents |
+|---|---|
+| `AbhayApp.kt`, `MainActivity.kt` | Dependency container; Compose root and back handling |
+| `core/` | Pure Kotlin: demo fixtures, `ModelContract` (modes, typed models, card validation), `ImageAnalysis` (quality gate, pair validation, ΔI/EI, YUV, rotation), `CameraModel`, `Clinical` (metadata, danger signs, referral rules, counselling text), `Workflow` (assessment/analysis engine), `OpticalPipeline` |
+| `data/` | Room entities/DAOs (v2), `ScreeningRepository` |
+| `net/` | `ApiClient` (HttpURLConnection, typed results), `Payloads` (schema-exact bodies), `BackendConfig` (URL policy, settings, network monitor) |
+| `sync/` | `SyncEngine`, Room store, `SyncWorker` |
+| `services/` | `CounsellingService`, `CounselingSpeaker` (TTS) |
+| `interop/` | `FhirExport`, `ReferralSummary` |
+| `vision/` | `Camera2PreviewView` (Camera2 session, pair capture) |
+| `ui/` | Theme, strings, navigation, ViewModel, screens |
+| `util/` | `SafeLog` / `Redactor` |
+
+## Prerequisites
+
+- JDK 17+ (CI uses 17; verified locally with JDK 22).
+- Android SDK Platform 36 and Build-Tools 36.x. Create `android/local.properties` with `sdk.dir=…`; it is git-ignored. Use forward slashes on Windows, e.g. `sdk.dir=E:/Android/Sdk`.
+- The Gradle wrapper (8.13) downloads everything else.
+
+## Build, test, install
 
 ```bash
-./gradlew --no-daemon :app:testDebugUnitTest :app:assembleDebug
+cd android
+./gradlew --no-daemon :app:testDebugUnitTest :app:assembleDebug      # macOS/Linux
+gradlew.bat --no-daemon :app:testDebugUnitTest :app:assembleDebug    # Windows
+python3 scripts/verify_room_migration.py                              # optional: checks the Room 1→2 SQL on SQLite
+./gradlew --no-daemon :app:lintDebug                                  # Android lint
 ```
 
-**Verification result:** build successful; 19 Android unit tests passed (9 `DemoInferenceTest` + 10 `OpticalPipelineTest`), no failures/errors/skips. The debug APK is written to `app/build/outputs/apk/debug/app-debug.apk`. The same Gradle project and tasks Android Studio uses were verified from the command line; Android Studio's GUI was not launched. No emulator or physical device was attached, so runtime/camera testing is still outstanding.
+APK: `app/build/outputs/apk/debug/app-debug.apk` (debug-signed; not a store build). Install with `adb install -r app/build/outputs/apk/debug/app-debug.apk`, or copy the file to the phone and allow "Install unknown apps" for that one install.
 
-The APK included in the release archive is debug-signed and is for development/demo installation only, not a store/release build. Read `../docs/ANDROID_STATUS.md` for exact build evidence and remaining device checks.
+Verified results, sizes, and checks are in [../docs/ANDROID_BUILD.md](../docs/ANDROID_BUILD.md).
 
-## Open in Android Studio
+## Backend configuration
 
-1. Extract the ZIP and choose **File → Open**, selecting the extracted `AbhayNayan/android` folder (the folder containing `settings.gradle.kts`).
-2. In **Settings/Preferences → Build, Execution, Deployment → Build Tools → Gradle**, select JDK 17 for the Gradle JDK. Install Android SDK Platform 36 if prompted and accept the SDK licenses.
-3. Wait for Gradle sync to finish. Run the `:app:testDebugUnitTest` and `:app:assembleDebug` tasks from the Gradle tool window, or use the command above in the Android folder's terminal.
-4. The generated APK appears at `app/build/outputs/apk/debug/app-debug.apk`.
+| Situation | URL (Settings › Backend server) |
+|---|---|
+| Emulator + `uvicorn` on the dev machine | `http://10.0.2.2:8000` (debug default) |
+| Physical phone + dev machine over USB | `adb reverse tcp:8000 tcp:8000`, then `http://127.0.0.1:8000` |
+| Deployed backend | `https://…` (required for release builds; set `-PabhaynayanReleaseApiUrl=https://…` or enter it in Settings) |
+| No backend | Switch the backend off; everything works offline and records stay on the phone |
 
-`local.properties` is machine-specific and intentionally not included; Android Studio creates it for the local SDK installation.
+Start the backend from the repository root with `scripts/run_local.sh` or `scripts/run_local.ps1`. Only synthetic demo records sync; the current backend rejects anything else.
 
-## Install on an Android phone
+## Camera permission and device limits
 
-1. Download and extract the release ZIP.
-2. Copy `AbhayNayan/android/app/build/outputs/apk/debug/app-debug.apk` to the phone (USB, cloud drive, or another trusted transfer method).
-3. Open the APK on the phone. If prompted, allow the file manager/browser to **Install unknown apps** for this one installation, then confirm installation.
-4. Open **AbhayNayan Demo**. Camera permission is optional; the abstract synthetic chart can exercise the local feature pipeline without taking a photo. Use synthetic demo cases only.
+The camera permission is requested on the capture step; if it is denied, the app explains how to enable it and offers photo import. Devices without a flash, or without AE lock/manual sensor control, use **ambient-only** mode, and the "This camera" panel shows which mode is active. LEGACY camera devices often don't report exposure metadata, so the flash comparison is rejected there. Frame interval is measured; 100 ms is a target and is not guaranteed.
 
-Android may block sideloading by default. Only install an APK you obtained from the release ZIP you trust. This debug APK has no Google Play distribution/signing guarantee.
+## Model artifacts
 
-## Native demo flow
+None are bundled, and none should be until they meet the card requirements in [../docs/ANDROID_ML_STATUS.md](../docs/ANDROID_ML_STATUS.md). That document also gives the exact steps to add one (assets, card, runtime, tests, opt-in).
 
-1. Choose the synthetic demo profile or create a local-only profile.
-2. Select maternal anemia or neonatal jaundice.
-3. Grant optional Camera permission. Camera2 captures an ambient `TextureView` preview snapshot and, when supported, a short torch-on preview snapshot; if flash fails, it falls back to ambient-only. This is not a still-photo pair and does not lock exposure or ISO.
-4. Review the basic brightness/edge engineering check, manually confirm the geometric guide, and inspect the local ROI, F−A visualization, RGB/Lab*/YCrCb features, and measured image-processing time. There is no face/eye landmark detector or anatomical ROI model.
-5. A fixed demo case may follow the camera flow only for a synthetic demo profile. The case value is selected independently of camera pixels/features and is labelled `FIXED DEMO VALUE · NOT FROM IMAGE`. Local/non-demo profiles cannot save a fixture result.
-6. Review the safety notice; use English/Hindi/Bhojpuri deterministic counselling/TTS and share local FHIR-style JSON/referral text. Temporary image buffers are held in memory for the local preview and are not stored with the screening.
+## Troubleshooting
 
-The native source is a focused shell; it does not have parity with every PWA dashboard, sync, Gemini workflow, or registration field. The model interface is not active and no clinically validated inference model is included. Do not use results for diagnosis, triage, care decisions, or to replace CBC, serum bilirubin testing, local protocol, or clinical judgment. Confirm only under appropriate clinical testing/protocol. See `../docs/SAFETY.md` and `../docs/ANDROID_STATUS.md`.
+- `SDK location not found`: create `local.properties`; check for backslash escapes on Windows.
+- `sdkmanager` fails with `'C:\Users\First' is not recognized`: install the SDK to a path without spaces.
+- Gradle daemon killed / out of memory: `gradle.properties` already limits the heap to 768 MB with one worker. Close other apps, or raise `-Xmx` slightly if RAM allows.
+- "Cannot reach the server": check the URL table above, then **Settings › Test connection**. HTTP to LAN IPs is blocked by design; use `adb reverse` or HTTPS.
+- No Bhojpuri voice: expected on most phones. The app uses a Hindi voice or asks the worker to read the text aloud.
+
+## Not yet done
+
+- No installation or runtime test on a device or emulator (none available during this work). The camera pair capture, TTS, WorkManager, and Compose UI have compiled and passed unit tests, but they still need a device smoke test (see [../docs/ANDROID_BUILD.md](../docs/ANDROID_BUILD.md)).
+- No biomarker model; no anatomical landmark/ROI model.
+- Hindi/Bhojpuri strings need review by fluent speakers. The referral rules need clinical governance review (`ReferralRules.REVIEW_STATUS`).
+- Room data is not encrypted by the app.
+- Non-demo records cannot sync until the backend contract changes (see [../docs/ANDROID_API_INTEGRATION.md](../docs/ANDROID_API_INTEGRATION.md)).
+- There are no instrumented (on-device) tests.

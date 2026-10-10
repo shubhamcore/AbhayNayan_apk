@@ -52,6 +52,9 @@ jobs:
       - name: Assemble and run unit tests
         working-directory: android
         run: ./gradlew --no-daemon :app:testDebugUnitTest :app:assembleDebug
+      - name: Verify Room 1→2 migration SQL against SQLite
+        working-directory: android
+        run: python3 scripts/verify_room_migration.py
       - uses: actions/upload-artifact@v4
         with:
           name: abhaynayan-android-debug-apk

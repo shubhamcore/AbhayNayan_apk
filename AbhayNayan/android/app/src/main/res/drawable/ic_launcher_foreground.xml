@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Simple eye mark: almond outline with a teal iris. 108dp adaptive-icon canvas, content inside the 66dp safe zone. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <path android:fillColor="#FFFFFF"
+        android:pathData="M24,54 C34,38 74,38 84,54 C74,70 34,70 24,54 Z" />
+    <path android:fillColor="#0A6F6B"
+        android:pathData="M54,43 a11,11 0 1,0 0.01,0 Z" />
+    <path android:fillColor="#123642"
+        android:pathData="M54,49 a5,5 0 1,0 0.01,0 Z" />
+</vector>
