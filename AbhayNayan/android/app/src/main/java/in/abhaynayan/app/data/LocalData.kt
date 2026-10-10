@@ -40,6 +40,10 @@ object SyncState {
     const val SYNCED = "SYNCED"
     /** Rejected by the server or retried too often; needs a manual retry. */
     const val FAILED = "FAILED"
+    /** Contract 1.0: the server holds a different record with this ID (first write wins). Local copy kept. */
+    const val CONFLICT = "CONFLICT"
+    /** Contract 1.0: the server will never accept this record. Local copy kept. */
+    const val REJECTED = "REJECTED"
 }
 
 @Entity(tableName = "screenings", indices = [Index("patientId"), Index("createdAtUtc"), Index("syncState")])
@@ -128,7 +132,7 @@ interface ScreeningDao {
     @Query(
         "SELECT " +
             "SUM(CASE WHEN syncState IN ('PENDING','SYNCING') THEN 1 ELSE 0 END) AS pending, " +
-            "SUM(CASE WHEN syncState = 'FAILED' THEN 1 ELSE 0 END) AS failed, " +
+            "SUM(CASE WHEN syncState IN ('FAILED','CONFLICT','REJECTED') THEN 1 ELSE 0 END) AS failed, " +
             "SUM(CASE WHEN syncState = 'SYNCED' THEN 1 ELSE 0 END) AS synced, " +
             "SUM(CASE WHEN syncState = 'LOCAL_ONLY' THEN 1 ELSE 0 END) AS localOnly " +
             "FROM screenings",

@@ -1,6 +1,6 @@
 # Android source and build status
 
-**Updated: 10 October 2026 (version `0.2.0-demo`).** The native app builds; 101 unit tests pass (including a live-backend report test); lint reports 0 errors; and a debug APK was produced, signature-checked, and scanned for secrets. **The app has not been installed or run on a device or emulator.** It is a prototype, not a clinical tool.
+**Updated: 10 October 2026 (version `0.3.0-demo`).** The native app builds; 111 unit tests pass (plus a live-backend report test run against contract 1.0 and 0.1 servers); lint reports 0 errors; every record gets an on-device PDF report; and a debug APK was produced, signature-checked, and scanned for secrets. **The app has not been installed or run on a device or emulator.** It is a prototype, not a clinical tool.
 
 Details:
 

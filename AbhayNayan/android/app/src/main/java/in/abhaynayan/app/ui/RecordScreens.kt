@@ -3,7 +3,9 @@ package `in`.abhaynayan.app.ui
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
+import androidx.core.content.FileProvider
 import androidx.core.net.toUri
+import java.io.File
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -41,6 +43,7 @@ import `in`.abhaynayan.app.data.SyncState
 import `in`.abhaynayan.app.interop.FhirExport
 import `in`.abhaynayan.app.interop.ReferralSummary
 import `in`.abhaynayan.app.services.CounselingSpeaker
+import `in`.abhaynayan.app.services.CounselSource
 import `in`.abhaynayan.app.services.SpeechState
 import java.util.Locale
 
@@ -108,10 +111,11 @@ fun RecordScreen(id: String, vm: AppViewModel, speaker: CounselingSpeaker, onBac
     val settings by vm.settings.collectAsState()
     val counselMap by vm.counselState.collectAsState()
     val speech by speaker.state.collectAsState()
+    val generatingPdf by vm.generatingPdf.collectAsState()
     var language by remember { mutableStateOf(settings.language) }
 
     Column(Modifier.fillMaxSize()) {
-        TopBar(s.counselling + " · " + s.referral, record?.let { ScreeningType.fromWire(it.screeningType)?.displayName }, onBack)
+        TopBar(s.report, record?.let { ScreeningType.fromWire(it.screeningType)?.displayName }, onBack)
         val r = record
         if (r == null) {
             Column(Modifier.fillMaxWidth()) { InfoText("Record not found on this phone.") }
@@ -120,6 +124,14 @@ fun RecordScreen(id: String, vm: AppViewModel, speaker: CounselingSpeaker, onBac
         LaunchedEffect(r.screeningId, language) { vm.loadCounsel(r, language) }
         val counsel = counselMap[r.screeningId to language]
         LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            item {
+                ReportCard(
+                    record = r, language = language, generating = generatingPdf,
+                    onSharePdf = { vm.exportReport(r, language) { file -> sharePdf(context, file) } },
+                    onOpenPdf = { vm.exportReport(r, language) { file -> openPdf(context, file) } },
+                    onShareText = { share(context, "AbhayNayan screening report", vm.reportText(r, language)) },
+                )
+            }
             item { SyncStatusCard(r, onRetry = { vm.retryFailed(r.screeningId) }, onSync = { vm.syncNow() }) }
             item { ResultDetails(r, null) }
             item {
@@ -144,6 +156,9 @@ fun RecordScreen(id: String, vm: AppViewModel, speaker: CounselingSpeaker, onBac
                         }
                         Chip(c.outcome.source.label, Palette.TealSoft, Palette.Navy)
                         c.outcome.note?.let { InfoText(it, Palette.Muted) }
+                        if (!c.loading && c.outcome.source != CounselSource.SERVER_GEMINI && r.resultMode == ResultMode.DEMO_SYNTHETIC.name) {
+                            SecondaryButton("Try AI wording again", { vm.loadCounsel(r, language) }, Modifier.fillMaxWidth())
+                        }
                         SpeechControls(speech, onPlay = { speaker.speak(c.outcome.text.fullText, language) }, onStop = { speaker.stop() })
                     }
                 }
@@ -158,7 +173,7 @@ fun RecordScreen(id: String, vm: AppViewModel, speaker: CounselingSpeaker, onBac
                         share(context, "AbhayNayan FHIR-style bundle", FhirExport.bundle(r, settings.phcLabel).toString(2))
                     }, Modifier.fillMaxWidth())
                     SecondaryButton("Save referral record", {
-                        vm.createReferral(r, language, counsel?.outcome?.text?.script.orEmpty())
+                        vm.createReferral(r, language, counsel?.outcome?.text?.script.orEmpty(), counsel?.outcome?.wireMode ?: "LOCAL_FALLBACK")
                     }, Modifier.fillMaxWidth())
                     referrals.forEach { ref ->
                         KeyValue("Referral ${ref.referralId.take(12)}…", "${formatTime(ref.createdAtUtc)} · ${ref.serverState.lowercase().replace('_', ' ')}" + (ref.lastError?.let { " · $it" } ?: ""))
@@ -192,6 +207,66 @@ private fun SyncStatusCard(record: ScreeningEntity, onRetry: () -> Unit, onSync:
         record.lastSyncError?.let { InfoText(it, if (record.syncState == SyncState.FAILED) Palette.RedText else Palette.Muted) }
         if (record.syncState == SyncState.FAILED) SecondaryButton("Retry sync", onRetry, Modifier.fillMaxWidth())
         if (record.syncState == SyncState.PENDING) SecondaryButton("Sync now", onSync, Modifier.fillMaxWidth())
+    }
+}
+
+/** The report is available for every record, in every result mode, without a network connection. */
+@Composable
+private fun ReportCard(
+    record: ScreeningEntity,
+    language: Language,
+    generating: Boolean,
+    onSharePdf: () -> Unit,
+    onOpenPdf: () -> Unit,
+    onShareText: () -> Unit,
+) {
+    val s = LocalStrings.current
+    val mode = ResultMode.entries.firstOrNull { it.name == record.resultMode } ?: ResultMode.DISABLED_NO_VALID_MODEL
+    val urgency = ReferralUrgency.entries.firstOrNull { it.name == record.referralUrgency } ?: ReferralUrgency.CONFIRMATORY_TESTING
+    val estimate = record.estimate
+    SectionCard(title = s.report, container = Palette.TealSoft, border = Palette.Teal.copy(alpha = .4f)) {
+        Text(
+            if (mode.producesEstimate && estimate != null) "${if (mode == ResultMode.DEMO_SYNTHETIC) "Synthetic demo value" else mode.label}: ${"%.1f".format(Locale.ROOT, estimate)} ${record.unit}"
+            else "No estimate (no valid model) · image checks ${if (record.qualityStatus == "PASSED") "passed" else record.qualityStatus.lowercase()}",
+            style = MaterialTheme.typography.titleMedium, color = Palette.Navy,
+        )
+        Text("Next step: ${urgency.label}", style = MaterialTheme.typography.bodyLarge,
+            color = if (urgency == ReferralUrgency.URGENT_REFERRAL) Palette.RedText else Palette.Navy)
+        InfoText("The PDF includes the result, next step, details, image checks, counselling (${language.nativeLabel}), and limitations. It has no photo and no nickname, and is made on this phone (works offline).")
+        if (generating) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            CircularProgressIndicator(Modifier.heightIn(max = 20.dp), strokeWidth = 2.dp)
+            InfoText("Creating PDF…", Palette.Muted)
+        }
+        PrimaryButton(s.sharePdf, onSharePdf, Modifier.fillMaxWidth(), enabled = !generating)
+        ActionRow {
+            SecondaryButton(s.openPdf, onOpenPdf, Modifier.weight(1f), enabled = !generating)
+            SecondaryButton("Share as text", onShareText, Modifier.weight(1f))
+        }
+    }
+}
+
+private fun pdfUri(context: Context, file: File) = FileProvider.getUriForFile(context, "${context.packageName}.reports", file)
+
+private fun sharePdf(context: Context, file: File) {
+    val intent = Intent(Intent.ACTION_SEND).apply {
+        type = "application/pdf"
+        putExtra(Intent.EXTRA_STREAM, pdfUri(context, file))
+        putExtra(Intent.EXTRA_SUBJECT, "AbhayNayan screening report")
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    }
+    context.startActivity(Intent.createChooser(intent, "Share screening report"))
+}
+
+private fun openPdf(context: Context, file: File) {
+    val intent = Intent(Intent.ACTION_VIEW).apply {
+        setDataAndType(pdfUri(context, file), "application/pdf")
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    }
+    try {
+        context.startActivity(intent)
+    } catch (_: ActivityNotFoundException) {
+        // No PDF viewer installed: fall back to the share sheet (Drive, WhatsApp, Files…).
+        sharePdf(context, file)
     }
 }
 

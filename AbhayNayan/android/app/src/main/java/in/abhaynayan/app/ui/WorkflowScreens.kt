@@ -85,7 +85,7 @@ fun WorkflowScreen(
                     if (preview != null) {
                         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                             ResultDetails(preview, draft.modelStatus)
-                            InfoText("Not saved yet. Save the record to continue to counselling and referral.")
+                            InfoText("Not saved yet. Saving creates the screening report (PDF), counselling, and referral.")
                             ActionRow {
                                 SecondaryButton(s.back, { vm.setStage(WorkflowStage.ANALYSIS) }, Modifier.weight(1f))
                                 PrimaryButton(if (draft.saving) "Saving…" else s.save, { vm.saveResult() }, Modifier.weight(1f), enabled = !draft.saving)

@@ -7,11 +7,12 @@ plugins {
 
 ksp { arg("room.schemaLocation", "$projectDir/schemas") }
 
-// Backend base URLs. Override with -PabhaynayanDebugApiUrl=... / -PabhaynayanReleaseApiUrl=https://...
-// Debug defaults to the Android emulator's alias for the development machine. Release has no default:
-// the deployed HTTPS URL must be supplied explicitly or entered in Settings.
-val debugApiUrl = (findProperty("abhaynayanDebugApiUrl") as String?) ?: "http://10.0.2.2:8000"
-val releaseApiUrl = (findProperty("abhaynayanReleaseApiUrl") as String?) ?: ""
+// Backend base URLs. Both build types default to the deployed website backend so a phone works out of the box.
+// Local development: -PabhaynayanDebugApiUrl=http://10.0.2.2:8000 (emulator) or http://127.0.0.1:8000 (adb reverse),
+// or change it in Settings. Release builds must use HTTPS.
+val deployedApiUrl = "https://abhaynayan-web.onrender.com"
+val debugApiUrl = (findProperty("abhaynayanDebugApiUrl") as String?) ?: deployedApiUrl
+val releaseApiUrl = (findProperty("abhaynayanReleaseApiUrl") as String?) ?: deployedApiUrl
 require(releaseApiUrl.isEmpty() || releaseApiUrl.startsWith("https://")) { "Release API URL must use HTTPS." }
 
 android {
@@ -22,8 +23,8 @@ android {
         applicationId = "in.abhaynayan.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 2
-        versionName = "0.2.0-demo"
+        versionCode = 3
+        versionName = "0.3.0-demo"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 

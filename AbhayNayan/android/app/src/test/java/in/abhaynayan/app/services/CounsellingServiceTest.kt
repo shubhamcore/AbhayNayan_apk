@@ -38,9 +38,9 @@ class CounsellingServiceTest {
         server.on("/api/counselling", 200, reply, delayMs = 150)
         val results = (1..4).map { async { service.fetch(TestFixtures.demoRecord(), Language.HI, online = true) } }.awaitAll()
         assertTrue(results.all { it.source == CounselSource.SERVER_GEMINI && it.text.script == "C" })
-        assertEquals(1, server.requests.size)
+        assertEquals(1, server.requestsTo("/api/counselling").size)
         service.fetch(TestFixtures.demoRecord(), Language.HI, online = true) // cached
-        assertEquals(1, server.requests.size)
+        assertEquals(1, server.requestsTo("/api/counselling").size)
     }
 
     @Test fun quotaOrServerErrorsFallBackToLocalText() = runBlocking {
@@ -48,6 +48,16 @@ class CounsellingServiceTest {
         val out = service.fetch(TestFixtures.demoRecord(), Language.EN, online = true)
         assertEquals(CounselSource.LOCAL_OFFLINE, out.source)
         assertTrue(out.note!!.contains("busy"))
+    }
+
+    @Test fun serverFallbackIsNotCachedSoGeminiIsRetried() = runBlocking {
+        server.on("/api/counselling", 200, reply.replace("\"GEMINI\"", "\"LOCAL_FALLBACK\",\"fallback_reason\":\"QUOTA_EXHAUSTED\""))
+        val first = service.fetch(TestFixtures.demoRecord(), Language.HI, online = true)
+        assertEquals(CounselSource.SERVER_FALLBACK, first.source)
+        server.on("/api/counselling", 200, reply)
+        val second = service.fetch(TestFixtures.demoRecord(), Language.HI, online = true)
+        assertEquals(CounselSource.SERVER_GEMINI, second.source)
+        assertEquals(2, server.requestsTo("/api/counselling").size)
     }
 
     @Test fun wrongLanguageReplyIsRejected() = runBlocking {

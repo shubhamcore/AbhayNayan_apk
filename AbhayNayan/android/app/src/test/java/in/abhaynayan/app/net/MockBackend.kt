@@ -20,7 +20,10 @@ class MockBackend : AutoCloseable {
     data class Received(val method: String, val path: String, val body: String)
 
     private val socket = ServerSocket(0, 50, InetAddress.getByName("127.0.0.1"))
-    @Volatile private var routes: Map<String, (String) -> Reply> = emptyMap()
+    /** Defaults to a contract-1.0 server; override `/api/health` to simulate the legacy 0.1 API. */
+    @Volatile private var routes: Map<String, (String) -> Reply> = mapOf(
+        "/api/health" to { _ -> Reply(200, """{"status":"ok","mode":"PROTOTYPE_DEMO","api_contract_version":"1.0.0","gemini_configured":false}""") },
+    )
     val requests = CopyOnWriteArrayList<Received>()
     val baseUrl: String get() = "http://127.0.0.1:${socket.localPort}"
 
@@ -69,6 +72,7 @@ class MockBackend : AutoCloseable {
     }
 
     fun on(path: String, handler: (String) -> Reply) { routes = routes + (path to handler) }
+    fun requestsTo(path: String) = requests.filter { it.path == path }
     fun on(path: String, code: Int, body: String, delayMs: Long = 0) = on(path) { Reply(code, body, delayMs) }
 
     override fun close() = socket.close()

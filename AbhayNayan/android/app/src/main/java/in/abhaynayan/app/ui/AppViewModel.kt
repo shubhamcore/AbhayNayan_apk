@@ -33,11 +33,15 @@ import `in`.abhaynayan.app.data.ScreeningRepository
 import `in`.abhaynayan.app.data.SubjectKind
 import `in`.abhaynayan.app.data.SyncCounts
 import `in`.abhaynayan.app.interop.ReferralSummary
+import `in`.abhaynayan.app.interop.ReportDocument
+import `in`.abhaynayan.app.services.PdfReportWriter
+import java.io.File
 import `in`.abhaynayan.app.net.ApiResult
 import `in`.abhaynayan.app.net.BackendUrlPolicy
 import `in`.abhaynayan.app.net.DashboardSummary
 import `in`.abhaynayan.app.net.Payloads
 import `in`.abhaynayan.app.services.CounselOutcome
+import `in`.abhaynayan.app.services.CounselSource
 import `in`.abhaynayan.app.util.SafeLog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -100,6 +104,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     private val dashboard = MutableStateFlow<DashboardSummary?>(null)
     val serverDashboard: StateFlow<DashboardSummary?> = dashboard.asStateFlow()
+
+    private val pdfBusy = MutableStateFlow(false)
+    val generatingPdf: StateFlow<Boolean> = pdfBusy.asStateFlow()
 
     private val syncBusy = MutableStateFlow(false)
     val syncing: StateFlow<Boolean> = syncBusy.asStateFlow()
@@ -287,20 +294,52 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     fun retryFailed(id: String) = viewModelScope.launch { repo.retryFailed(id); say("Queued for another sync attempt.") }
 
+    /** Fetches counselling text; anything other than Gemini wording is fetched again (e.g. after quota resets). */
     fun loadCounsel(record: ScreeningEntity, language: Language) {
         val key = record.screeningId to language
         val type = ScreeningType.fromWire(record.screeningType) ?: return
         val mode = `in`.abhaynayan.app.core.ResultMode.entries.firstOrNull { it.name == record.resultMode } ?: `in`.abhaynayan.app.core.ResultMode.DISABLED_NO_VALID_MODEL
         val existing = counsel.value[key]
-        if (existing != null) return
-        counsel.update { it + (key to CounselUi(app.counselling.local(type, mode, language), loading = true)) }
+        if (existing != null && (existing.loading || existing.outcome.source == CounselSource.SERVER_GEMINI)) return
+        counsel.update { it + (key to CounselUi(existing?.outcome ?: app.counselling.local(type, mode, language), loading = true)) }
         viewModelScope.launch {
             val outcome = app.counselling.fetch(record, language, online.value && app.settings.activeBaseUrl() != null)
             counsel.update { it + (key to CounselUi(outcome, loading = false)) }
         }
     }
 
-    fun createReferral(record: ScreeningEntity, language: Language, counsellingText: String) {
+    /**
+     * Builds the on-device PDF report (any result mode, works offline) and hands the file to [onReady].
+     * Uses the counselling text currently shown for [language] (server wording if it arrived, else on-device).
+     */
+    fun exportReport(record: ScreeningEntity, language: Language, onReady: (File) -> Unit) {
+        if (pdfBusy.value) return // ignore double taps
+        pdfBusy.value = true
+        viewModelScope.launch {
+            try {
+                val type = ScreeningType.fromWire(record.screeningType) ?: ScreeningType.MATERNAL_ANEMIA
+                val mode = `in`.abhaynayan.app.core.ResultMode.entries.firstOrNull { it.name == record.resultMode } ?: `in`.abhaynayan.app.core.ResultMode.DISABLED_NO_VALID_MODEL
+                val counselOutcome = counsel.value[record.screeningId to language]?.outcome ?: app.counselling.local(type, mode, language)
+                val doc = ReportDocument.from(record, language, counselOutcome.text, counselOutcome.source.label, BuildConfig.VERSION_NAME)
+                val file = withContext(Dispatchers.IO) { PdfReportWriter.write(app, doc, record.screeningId) }
+                onReady(file)
+            } catch (e: Exception) {
+                SafeLog.w("PDF report failed", e)
+                say("The PDF report could not be created. You can still share the text summary.")
+            } finally {
+                pdfBusy.value = false
+            }
+        }
+    }
+
+    fun reportText(record: ScreeningEntity, language: Language): String {
+        val type = ScreeningType.fromWire(record.screeningType) ?: ScreeningType.MATERNAL_ANEMIA
+        val mode = `in`.abhaynayan.app.core.ResultMode.entries.firstOrNull { it.name == record.resultMode } ?: `in`.abhaynayan.app.core.ResultMode.DISABLED_NO_VALID_MODEL
+        val c = counsel.value[record.screeningId to language]?.outcome ?: app.counselling.local(type, mode, language)
+        return ReportDocument.from(record, language, c.text, c.source.label, BuildConfig.VERSION_NAME).toPlainText()
+    }
+
+    fun createReferral(record: ScreeningEntity, language: Language, counsellingText: String, counsellingMode: String = "LOCAL_FALLBACK") {
         viewModelScope.launch {
             val summary = ReferralSummary.from(record, language)
             val id = ScreeningRepository.newReferralId()
@@ -310,7 +349,15 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 summary.nextStep, if (eligible) "PENDING" else "LOCAL_ONLY")
             repo.saveReferral(entity)
             if (!eligible) { say("Referral saved on this phone. Share the summary with the facility."); return@launch }
-            val request = Payloads.referralRequest(id, record, settings.value.workerLabel, language, counsellingText, summary.nextStep)
+            val contract = when (val c = app.api.contract()) {
+                is ApiResult.Success -> c.value
+                is ApiResult.Failure -> {
+                    repo.saveReferral(entity.copy(serverState = "FAILED", lastError = c.userMessage))
+                    say("Referral saved on this phone. ${c.userMessage}")
+                    return@launch
+                }
+            }
+            val request = Payloads.referralRequest(id, record, settings.value.workerLabel, language, counsellingText, summary.nextStep, contract, counsellingMode)
             entity = when (val result = app.api.createReferral(request)) {
                 is ApiResult.Success -> entity.copy(serverState = "CREATED", pdfPath = result.value.pdfPath)
                 is ApiResult.Failure -> entity.copy(serverState = "FAILED", lastError = result.userMessage)
@@ -328,14 +375,14 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     fun saveBackend(url: String, enabled: Boolean): String? {
         if (!enabled) {
-            app.settings.update { it.copy(backendEnabled = false) }
+            app.settings.update { it.copy(backendEnabled = false, backendExplicit = true) }
             backend.value = BackendStatus(BackendState.NOT_CONFIGURED, "Backend disabled. Everything stays on this phone.")
             return null
         }
         return when (val r = BackendUrlPolicy.validate(url, BuildConfig.DEBUG)) {
             is BackendUrlPolicy.Result.Invalid -> r.message
             is BackendUrlPolicy.Result.Valid -> {
-                app.settings.update { it.copy(backendUrl = r.normalized, backendEnabled = true) }
+                app.settings.update { it.copy(backendUrl = r.normalized, backendEnabled = true, backendExplicit = true) }
                 checkBackend(); repo.syncNow(); null
             }
         }
@@ -351,10 +398,11 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         if (app.settings.activeBaseUrl() == null) {
             backend.value = BackendStatus(BackendState.NOT_CONFIGURED, "No backend configured. Records stay on this phone."); return
         }
-        backend.value = BackendStatus(BackendState.CHECKING, "Checking server…")
+        backend.value = BackendStatus(BackendState.CHECKING, "Checking server… (a sleeping free-tier server can take up to a minute to wake)")
         viewModelScope.launch {
             backend.value = when (val r = app.api.health()) {
-                is ApiResult.Success -> BackendStatus(BackendState.REACHABLE, "Server reachable (${r.value.mode}).", r.value.geminiConfigured)
+                is ApiResult.Success -> BackendStatus(BackendState.REACHABLE,
+                    "Server reachable (${r.value.mode}${r.value.contractVersion?.let { ", API contract $it" } ?: ", pre-1.0 API"}).", r.value.geminiConfigured)
                 is ApiResult.Failure -> BackendStatus(BackendState.UNREACHABLE, r.userMessage)
             }
             if (backend.value.state == BackendState.REACHABLE) {
@@ -366,6 +414,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     fun deleteAllLocalData() {
         viewModelScope.launch {
             repo.deleteAllLocalData()
+            withContext(Dispatchers.IO) { PdfReportWriter.clear(app) }
             counsel.value = emptyMap()
             repo.ensureDemoProfiles()
             say("All screening records and profiles were deleted from this phone.")

@@ -19,9 +19,13 @@ fun interface HttpTransport {
     fun execute(request: HttpRequest): HttpResponse
 }
 
+/**
+ * Production transport. Timeouts allow for a free-tier host (e.g. Render) waking from sleep, which can
+ * take tens of seconds on the first request; sync runs in the background so this does not block the UI.
+ */
 class UrlConnectionTransport(
-    private val connectTimeoutMs: Int = 8_000,
-    private val readTimeoutMs: Int = 15_000,
+    private val connectTimeoutMs: Int = 15_000,
+    private val readTimeoutMs: Int = 45_000,
     private val maxResponseBytes: Int = 2_000_000,
 ) : HttpTransport {
     override fun execute(request: HttpRequest): HttpResponse {
@@ -68,14 +72,41 @@ enum class ApiErrorKind { NOT_CONFIGURED, UNREACHABLE, TIMEOUT, HTTP, INVALID_RE
 /** Typed outcome. Error messages are user-facing and never include bodies, stack traces, or URLs. */
 sealed class ApiResult<out T> {
     data class Success<T>(val value: T) : ApiResult<T>()
-    data class Failure(val kind: ApiErrorKind, val httpCode: Int?, val userMessage: String, val retryable: Boolean) : ApiResult<Nothing>()
+    data class Failure(
+        val kind: ApiErrorKind,
+        val httpCode: Int?,
+        val userMessage: String,
+        val retryable: Boolean,
+        /** Contract 1.0 `error.code`, when the server sent one. */
+        val errorCode: String? = null,
+    ) : ApiResult<Nothing>()
 }
 
 object ApiErrors {
-    fun forHttp(code: Int): ApiResult.Failure = when (code) {
+    /**
+     * Maps a non-2xx response. Contract 1.0 bodies carry `{error: {code, retryable}}`; those values refine the
+     * status-code default. The server's message text is never shown (it is not localised and may change).
+     */
+    fun forHttp(code: Int, body: String? = null): ApiResult.Failure {
+        val envelope = try { body?.let { JSONObject(it).optJSONObject("error") } } catch (_: JSONException) { null }
+        val base = forStatus(code)
+        if (envelope == null) return base
+        val errorCode = envelope.optString("code").takeIf { it.isNotBlank() }
+        val message = when (errorCode) {
+            "ID_CONFLICT" -> "The server already holds a different record with this ID. The copy on this phone is kept."
+            "MODEL_DISABLED" -> "No validated model is enabled on the server."
+            "DEMO_FIXTURE_REQUIRES_DEMO_PROFILE" -> "Demo values can only be used with a synthetic demo profile."
+            "PDF_GENERATION_FAILED" -> "The server could not create the PDF. Try again later."
+            else -> base.userMessage
+        }
+        return base.copy(userMessage = message, retryable = if (envelope.has("retryable")) envelope.optBoolean("retryable") else base.retryable, errorCode = errorCode)
+    }
+
+    private fun forStatus(code: Int): ApiResult.Failure = when (code) {
         400, 422 -> ApiResult.Failure(ApiErrorKind.HTTP, code, "The server did not accept this record (validation error).", retryable = false)
         401, 403 -> ApiResult.Failure(ApiErrorKind.HTTP, code, "The server refused access. Check the backend settings.", retryable = false)
         404 -> ApiResult.Failure(ApiErrorKind.HTTP, code, "The server does not offer this feature (version mismatch?).", retryable = false)
+        409 -> ApiResult.Failure(ApiErrorKind.HTTP, code, "The server already holds a different record with this ID.", retryable = false)
         408 -> ApiResult.Failure(ApiErrorKind.HTTP, code, "The server timed out. Will retry later.", retryable = true)
         429 -> ApiResult.Failure(ApiErrorKind.HTTP, code, "The server is busy (too many requests). Will retry later.", retryable = true)
         in 500..599 -> ApiResult.Failure(ApiErrorKind.HTTP, code, "The server had a problem. Will retry later.", retryable = true)
@@ -88,8 +119,14 @@ object ApiErrors {
     val invalid = ApiResult.Failure(ApiErrorKind.INVALID_RESPONSE, null, "The server sent a response the app could not read.", retryable = true)
 }
 
-data class HealthInfo(val status: String, val mode: String, val geminiConfigured: Boolean)
-data class SyncAck(val accepted: Int, val duplicate: Int, val syncedIds: List<String>)
+data class HealthInfo(val status: String, val mode: String, val geminiConfigured: Boolean, val contractVersion: String?) {
+    val contract: Contract get() = Contract.fromVersion(contractVersion)
+}
+
+/** One per-record outcome from contract 1.0 `/api/sync` (`accepted`, `duplicate`, `conflict`, `rejected`). */
+data class SyncItem(val id: String?, val status: String, val errorCode: String?, val retryable: Boolean)
+
+data class SyncAck(val accepted: Int, val duplicate: Int, val syncedIds: List<String>, val results: List<SyncItem> = emptyList())
 data class CounselResponse(
     val summary: String,
     val riskExplanation: String,
@@ -100,6 +137,8 @@ data class CounselResponse(
     val language: String,
     val safetyNote: String,
     val mode: String,
+    /** Contract 1.0: why deterministic copy was used (e.g. NO_API_KEY, RATE_LIMITED); null when Gemini wording was accepted. */
+    val fallbackReason: String? = null,
 )
 data class ReferralAck(val id: String, val screeningId: String, val created: Boolean, val pdfPath: String)
 data class DashboardSummary(val totalScreenings: Int, val referrals: Int, val todayScreenings: Int, val mode: String)
@@ -114,14 +153,38 @@ class ApiClient(
     private val transport: HttpTransport = UrlConnectionTransport(),
 ) {
     suspend fun health(): ApiResult<HealthInfo> = call("GET", "/api/health") { o ->
-        HealthInfo(o.getString("status"), o.optString("mode"), o.optBoolean("gemini_configured", false))
+        HealthInfo(o.getString("status"), o.optString("mode"), o.optBoolean("gemini_configured", false),
+            o.optString("api_contract_version").takeIf { it.isNotBlank() })
+    }.also { result -> if (result is ApiResult.Success) cachedContract = baseUrl() to result.value.contract }
+
+    @Volatile private var cachedContract: Pair<String?, Contract>? = null
+
+    /**
+     * The request format the configured server accepts, from `/api/health` (cached per base URL).
+     * Returns the failure when the server cannot be reached, so callers keep their records queued.
+     */
+    suspend fun contract(): ApiResult<Contract> {
+        val url = baseUrl()
+        cachedContract?.let { (cachedUrl, contract) -> if (cachedUrl == url) return ApiResult.Success(contract) }
+        return when (val h = health()) {
+            is ApiResult.Success -> ApiResult.Success(h.value.contract)
+            is ApiResult.Failure -> h
+        }
     }
 
     suspend fun sync(records: JSONArray): ApiResult<SyncAck> {
         require(records.length() in 1..100) { "Sync batches must contain 1–100 records." }
         return call("POST", "/api/sync", JSONObject().put("records", records).toString()) { o ->
             val ids = o.getJSONArray("synced_ids")
-            SyncAck(o.getInt("accepted"), o.getInt("duplicate"), (0 until ids.length()).map { ids.getString(it) })
+            val results = o.optJSONArray("results")?.let { a ->
+                (0 until a.length()).map { i ->
+                    val r = a.getJSONObject(i)
+                    val err = r.optJSONObject("error")
+                    SyncItem(r.optString("id").takeIf { !r.isNull("id") && it.isNotBlank() }, r.getString("status"),
+                        err?.optString("code")?.takeIf { it.isNotBlank() }, err?.optBoolean("retryable", false) ?: false)
+                }
+            }.orEmpty()
+            SyncAck(o.getInt("accepted"), o.getInt("duplicate"), (0 until ids.length()).map { ids.getString(it) }, results)
         }
     }
 
@@ -136,6 +199,7 @@ class ApiClient(
             language = o.getString("language"),
             safetyNote = o.getString("safety_note"),
             mode = o.optString("mode", "LOCAL_FALLBACK"),
+            fallbackReason = o.optString("fallback_reason").takeIf { it.isNotBlank() && !o.isNull("fallback_reason") },
         )
     }
 
@@ -184,7 +248,7 @@ class ApiClient(
             } catch (_: IllegalArgumentException) {
                 return@withContext ApiErrors.notConfigured
             }
-            if (response.code !in 200..299) return@withContext ApiErrors.forHttp(response.code)
+            if (response.code !in 200..299) return@withContext ApiErrors.forHttp(response.code, response.body)
             try {
                 ApiResult.Success(parse(response.body))
             } catch (_: JSONException) {

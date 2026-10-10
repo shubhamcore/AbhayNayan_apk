@@ -47,6 +47,8 @@ data class AppSettings(
     val workerLabel: String,
     val phcLabel: String,
     val language: Language,
+    /** True only after the user saved a backend in Settings; otherwise the build default applies. */
+    val backendExplicit: Boolean = false,
 )
 
 /** Plain SharedPreferences: these values are not secrets (no API keys are ever stored on the phone). */
@@ -55,13 +57,19 @@ class SettingsStore(context: Context, private val defaultBackendUrl: String) {
     private val state = MutableStateFlow(read())
     val settings: StateFlow<AppSettings> = state.asStateFlow()
 
-    private fun read() = AppSettings(
-        backendUrl = prefs.getString(KEY_URL, null) ?: defaultBackendUrl.ifBlank { null },
-        backendEnabled = prefs.getBoolean(KEY_ENABLED, defaultBackendUrl.isNotBlank()),
+    // Builds before 0.3.0 wrote the then-default emulator URL on every settings change, so a stored URL is
+    // trusted only when the user explicitly saved it (KEY_EXPLICIT). Otherwise the current build default applies.
+    private fun read(): AppSettings {
+        val explicit = prefs.getBoolean(KEY_EXPLICIT, false)
+        return AppSettings(
+        backendUrl = (if (explicit) prefs.getString(KEY_URL, null) else null) ?: defaultBackendUrl.ifBlank { null },
+        backendEnabled = if (explicit) prefs.getBoolean(KEY_ENABLED, true) else defaultBackendUrl.isNotBlank(),
+        backendExplicit = explicit,
         workerLabel = prefs.getString(KEY_WORKER, "demo-worker") ?: "demo-worker",
         phcLabel = prefs.getString(KEY_PHC, "Demo PHC") ?: "Demo PHC",
         language = Language.fromCode(prefs.getString(KEY_LANGUAGE, "en")),
-    )
+        )
+    }
 
     /** URL used for requests, or null when the backend is disabled or unset. */
     fun activeBaseUrl(): String? = state.value.takeIf { it.backendEnabled }?.backendUrl
@@ -74,6 +82,7 @@ class SettingsStore(context: Context, private val defaultBackendUrl: String) {
             putString(KEY_WORKER, next.workerLabel)
             putString(KEY_PHC, next.phcLabel)
             putString(KEY_LANGUAGE, next.language.code)
+            putBoolean(KEY_EXPLICIT, next.backendExplicit)
         }
         state.value = next
     }
@@ -89,6 +98,7 @@ class SettingsStore(context: Context, private val defaultBackendUrl: String) {
         const val KEY_WORKER = "worker_label"
         const val KEY_PHC = "phc_label"
         const val KEY_LANGUAGE = "language"
+        const val KEY_EXPLICIT = "backend_explicit"
     }
 }
 

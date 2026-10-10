@@ -19,7 +19,23 @@ From `AbhayNayan/android/` (PowerShell users: `.\gradlew.bat …`; `JAVA_HOME` p
 
 Test suites: `ClinicalTest` 9, `DemoInferenceTest` 9, `ImageAnalysisTest` 15, `ModelContractTest` 12, `OpticalPipelineTest` 10, `WorkflowEngineTest` 10, `ReportGenerationTest` 3, `ApiClientTest` 8, `PayloadsTest` 8, `CounsellingServiceTest` 5, `SyncEngineTest` 9, `NavigationAndLoggingTest` 3. Hand-shake coverage: shifts of (6,0), (−5,3), (3,−4), (9,7) px are recovered exactly with the same EI as a still pair; a (45,30) px move only skips the flash comparison; a shaken capture passes the checks and produces every report format. HTTP tests use a local mock server (no live backend, no Gemini key, no patient data).
 
-## APK
+## 0.3.0-demo (10 October 2026, later the same day)
+
+Changes: on-device PDF report for every record; "Save & view report"; deployed backend (`https://abhaynayan-web.onrender.com`) as default; API contract 1.0 support with automatic fallback to the 0.1 format.
+
+| Check | Result |
+|---|---|
+| `./gradlew --no-daemon :app:testDebugUnitTest --rerun :app:assembleDebug :app:lintDebug` | **BUILD SUCCESSFUL** (2 m 40 s) |
+| Unit tests | **111 run, 0 failures, 1 skipped** (the live test skips without `ABHAYNAYAN_LIVE_BACKEND`) |
+| Live test vs latest website backend (`hrdkkmr/AbhayNayan_web` `e9bb896`, contract 1.0.0, run locally) | **3/3 passed**; client detected `V1`; sync accepted, re-sync `duplicate`, Bhojpuri counselling, referral, server PDF showing "Synthetic demo value (not measured)", newborn age, provenance, referral reason |
+| Live test vs bundled backend copy (contract 0.1, run locally) | **3/3 passed**; client detected `LEGACY_0_1` and sent the old format |
+| Deployed backend | Read-only check: `/api/health` → `api_contract_version 1.0.0`, Gemini configured. No test data was written to the deployed database. |
+| Lint | **0 errors**, 15 warnings |
+| Room migration script | PASS (schema unchanged in 0.3.0) |
+| APK | `app/build/outputs/apk/debug/app-debug.apk`, 12,590,141 bytes, SHA-256 `a962f53a817429f8d7ef9e30a1ef91d9d88b87cf8f276ceec3666c215a7583dc`, versionCode 3 / `0.3.0-demo`, v2 debug signature verified, report FileProvider `exported=false`, default URL = deployed backend, no keys/assets |
+| **Not verified** | The PDF renderer uses Android's `PdfDocument`, which cannot run in JVM tests. Its *content* is unit-tested (`ReportDocumentTest`); the rendered layout and Hindi/Bhojpuri glyphs must be checked on a phone. |
+
+## APK (0.2.0 record)
 
 | Check | Result |
 |---|---|

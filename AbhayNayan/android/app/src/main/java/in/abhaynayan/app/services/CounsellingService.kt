@@ -19,7 +19,10 @@ enum class CounselSource(val label: String) {
     LOCAL_OFFLINE("On this phone · offline text"),
 }
 
-data class CounselOutcome(val text: CounselText, val source: CounselSource, val note: String?)
+data class CounselOutcome(val text: CounselText, val source: CounselSource, val note: String?) {
+    /** Wire value for contract 1.0 `counselling_mode` on referrals. */
+    val wireMode: String get() = if (source == CounselSource.SERVER_GEMINI) "GEMINI" else "LOCAL_FALLBACK"
+}
 
 /**
  * Counselling copy. The server (and Gemini behind it) only supplies wording for synthetic demo records;
@@ -48,25 +51,33 @@ class CounsellingService(private val api: ApiClient) {
         }
         if (!owner) return deferred.await()
         val outcome = try {
-            val request = Payloads.counsellingRequest(record, language)
-            when (val result = api.counselling(request)) {
-                is ApiResult.Success -> {
-                    val r = result.value
-                    if (r.language != language.code) fallback.copy(note = "Server replied in another language; showing on-device text.")
-                    else CounselOutcome(
-                        CounselText(r.summary, r.riskExplanation, r.script, r.nextStep, r.safetyNote),
-                        if (r.mode.startsWith("GEMINI")) CounselSource.SERVER_GEMINI else CounselSource.SERVER_FALLBACK,
-                        null,
-                    )
+            val contract = when (val c = api.contract()) {
+                is ApiResult.Success -> c.value
+                is ApiResult.Failure -> null
+            }
+            if (contract == null) {
+                fallback.copy(note = "Server not reachable; showing on-device text.")
+            } else {
+                when (val result = api.counselling(Payloads.counsellingRequest(record, language, contract))) {
+                    is ApiResult.Success -> {
+                        val r = result.value
+                        if (r.language != language.code) fallback.copy(note = "Server replied in another language; showing on-device text.")
+                        else CounselOutcome(
+                            CounselText(r.summary, r.riskExplanation, r.script, r.nextStep, r.safetyNote),
+                            if (r.mode.startsWith("GEMINI")) CounselSource.SERVER_GEMINI else CounselSource.SERVER_FALLBACK,
+                            r.fallbackReason?.let { "Server used its reviewed text (${it.lowercase().replace('_', ' ')})." },
+                        )
+                    }
+                    is ApiResult.Failure -> fallback.copy(note = result.userMessage)
                 }
-                is ApiResult.Failure -> fallback.copy(note = result.userMessage)
             }
         } catch (_: IllegalArgumentException) {
             fallback
         }
         lock.withLock {
             inFlight.remove(key)
-            if (outcome.source != CounselSource.LOCAL_OFFLINE) cache[key] = outcome
+            // Only Gemini wording is cached; server fallback text (quota, timeout) is retried on the next fetch.
+            if (outcome.source == CounselSource.SERVER_GEMINI) cache[key] = outcome
         }
         deferred.complete(outcome)
         return outcome

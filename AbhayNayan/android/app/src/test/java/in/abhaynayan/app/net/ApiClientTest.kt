@@ -36,6 +36,29 @@ class ApiClientTest {
         }
     }
 
+    @Test fun contract10ErrorEnvelopeRefinesCodeAndRetryability() = runBlocking {
+        server.on("/api/referrals", 409, """{"detail":"Conflict","error":{"code":"ID_CONFLICT","message":"m","status":409,"retryable":false,"fields":[]},"api_contract_version":"1.0.0"}""")
+        val conflict = failure(client.createReferral(JSONObject()))
+        assertEquals("ID_CONFLICT", conflict.errorCode)
+        assertFalse(conflict.retryable)
+        assertTrue(conflict.userMessage.contains("different record"))
+        server.on("/api/referrals", 503, """{"detail":"DISABLED","error":{"code":"MODEL_DISABLED","message":"m","status":503,"retryable":false,"fields":[]}}""")
+        val disabled = failure(client.createReferral(JSONObject()))
+        assertFalse("503 MODEL_DISABLED must not be retried", disabled.retryable)
+        server.on("/api/referrals", 500, """{"detail":"x","error":{"code":"PDF_GENERATION_FAILED","message":"m","status":500,"retryable":true,"fields":[]}}""")
+        assertTrue(failure(client.createReferral(JSONObject())).retryable)
+    }
+
+    @Test fun contractVersionIsReadFromHealthAndCached() = runBlocking {
+        assertEquals(Contract.V1, (client.contract() as ApiResult.Success).value)
+        client.contract()
+        assertEquals(1, server.requestsTo("/api/health").size)
+        val legacy = MockBackend().apply { on("/api/health", 200, """{"status":"ok","mode":"PROTOTYPE_DEMO","gemini_configured":false}""") }
+        try {
+            assertEquals(Contract.LEGACY_0_1, (ApiClient({ legacy.baseUrl }).contract() as ApiResult.Success).value)
+        } finally { legacy.close() }
+    }
+
     @Test fun invalidJsonAndMissingFieldsAreInvalidResponses() = runBlocking {
         server.on("/api/health", 200, "<html>proxy login</html>")
         assertEquals(ApiErrorKind.INVALID_RESPONSE, failure(client.health()).kind)

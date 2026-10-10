@@ -82,20 +82,23 @@ class ReportGenerationTest {
     @Test fun liveBackendAcceptsRecordAndProducesReferralPdf() = runBlocking {
         val base = System.getenv("ABHAYNAYAN_LIVE_BACKEND")
         assumeTrue("ABHAYNAYAN_LIVE_BACKEND not set; live backend test skipped", !base.isNullOrBlank())
-        val api = ApiClient({ base }, UrlConnectionTransport(readTimeoutMs = 20_000))
-        val r = record(TestFixtures.demoPatient, ScreeningType.NEONATAL_JAUNDICE, ScreeningMetadata(infantAgeHours = 40, visibleJaundice = true), "jaundice-review")
+        val api = ApiClient({ base }, UrlConnectionTransport(readTimeoutMs = 60_000))
+        val newborn = TestFixtures.demoPatient.copy(patientId = "ABH-DEMO-NEWBORN", subjectKind = "NEWBORN")
+        val r = record(newborn, ScreeningType.NEONATAL_JAUNDICE, ScreeningMetadata(infantAgeHours = 40, visibleJaundice = true), "jaundice-review")
+        val contract = (api.contract() as ApiResult.Success).value
+        println("Live backend $base speaks $contract")
 
-        val sync = api.sync(JSONArray().put(Payloads.screeningRecord(r)))
+        val sync = api.sync(JSONArray().put(Payloads.screeningRecord(r, contract)))
         assertTrue("sync failed: $sync", sync is ApiResult.Success && r.screeningId in sync.value.syncedIds)
-        val again = api.sync(JSONArray().put(Payloads.screeningRecord(r)))
+        val again = api.sync(JSONArray().put(Payloads.screeningRecord(r, contract)))
         assertEquals("duplicate must not be re-inserted", 1, (again as ApiResult.Success).value.duplicate)
 
-        val counsel = api.counselling(Payloads.counsellingRequest(r, Language.BHO))
+        val counsel = api.counselling(Payloads.counsellingRequest(r, Language.BHO, contract))
         assertTrue("counselling failed: $counsel", counsel is ApiResult.Success && counsel.value.language == "bho")
 
         val summary = ReferralSummary.from(r)
         val referralId = "ref-" + UUID.randomUUID()
-        val created = api.createReferral(Payloads.referralRequest(referralId, r, "ASHA-017", Language.EN, "Arrange review.", summary.nextStep))
+        val created = api.createReferral(Payloads.referralRequest(referralId, r, "ASHA-017", Language.EN, "Arrange review.", summary.nextStep, contract))
         assertTrue("referral failed: $created", created is ApiResult.Success)
         val pdfUrl = api.absolute((created as ApiResult.Success).value.pdfPath)!!
         val connection = URL(pdfUrl).openConnection() as HttpURLConnection

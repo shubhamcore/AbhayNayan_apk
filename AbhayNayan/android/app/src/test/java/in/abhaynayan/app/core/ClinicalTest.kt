@@ -80,7 +80,7 @@ class ClinicalTest {
             "maternal-normal" to Triple(11.8, "DEMO_LOW", .82 to .91),
             "maternal-moderate" to Triple(9.4, "DEMO_MODERATE", .82 to .91),
             "maternal-high" to Triple(7.8, "DEMO_HIGH", .79 to .90),
-            "jaundice-review" to Triple(12.8, "REQUIRES_REVIEW", .79 to .90),
+            "jaundice-review" to Triple(12.8, "DEMO_REVIEW", .79 to .90),
             "jaundice-escalate" to Triple(18.0, "DEMO_ESCALATE", .76 to .88),
         )
         val all = ScreeningType.entries.flatMap { DemoInference.cases(it) }
@@ -91,5 +91,7 @@ class ClinicalTest {
             assertEquals(scores.first, c.confidencePlaceholder, 1e-9); assertEquals(scores.second, c.fixtureQualityPlaceholder, 1e-9)
         }
         assertEquals("maternal-high", DemoInference.resolve(ScreeningType.MATERNAL_ANEMIA, null, "DEMO_HIGH")?.id)
+        // Records saved before contract 1.0 kept the old tag.
+        assertEquals("jaundice-review", DemoInference.resolve(ScreeningType.NEONATAL_JAUNDICE, null, "REQUIRES_REVIEW")?.id)
     }
 }

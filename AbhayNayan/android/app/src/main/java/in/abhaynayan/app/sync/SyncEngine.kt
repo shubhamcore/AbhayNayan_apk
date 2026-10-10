@@ -6,6 +6,7 @@ import `in`.abhaynayan.app.data.SyncState
 import `in`.abhaynayan.app.net.ApiClient
 import `in`.abhaynayan.app.net.ApiErrorKind
 import `in`.abhaynayan.app.net.ApiResult
+import `in`.abhaynayan.app.net.Contract
 import `in`.abhaynayan.app.net.Payloads
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -40,6 +41,12 @@ class SyncEngine(
 
     suspend fun run(): SyncOutcome = mutex.withLock {
         store.resetInterrupted()
+        if (store.pending(1).isEmpty()) return@withLock SyncOutcome(0, 0, 0, retryLater = false, message = "Nothing to sync.")
+        // The request format depends on the server's contract version (checked via /api/health, cached).
+        val contract = when (val c = api.contract()) {
+            is ApiResult.Success -> c.value
+            is ApiResult.Failure -> return@withLock SyncOutcome(0, 0, 0, retryLater = c.retryable, message = c.userMessage)
+        }
         var synced = 0; var failed = 0; var localOnly = 0
         val seen = HashSet<String>()
         while (true) {
@@ -56,7 +63,7 @@ class SyncEngine(
             val claimed = store.claim(eligible.map { it.screeningId }, clock()).toSet()
             val toSend = eligible.filter { it.screeningId in claimed }
             if (toSend.isEmpty()) continue
-            when (val step = send(toSend)) {
+            when (val step = send(toSend, contract)) {
                 is Step.Done -> { synced += step.synced; failed += step.failed }
                 is Step.Stop -> return@withLock SyncOutcome(synced, failed, localOnly, step.retryLater, step.message)
             }
@@ -74,17 +81,19 @@ class SyncEngine(
         data class Stop(val retryLater: Boolean, val message: String) : Step()
     }
 
-    private suspend fun send(records: List<ScreeningEntity>): Step {
+    private suspend fun send(records: List<ScreeningEntity>, contract: Contract): Step {
         val ids = records.map { it.screeningId }
         val payload = try {
-            JSONArray().also { array -> records.forEach { array.put(Payloads.screeningRecord(it)) } }
+            JSONArray().also { array -> records.forEach { array.put(Payloads.screeningRecord(it, contract)) } }
         } catch (e: IllegalArgumentException) {
             store.markAttemptFailed(ids, SyncState.FAILED, "Record could not be prepared for sync.")
             return Step.Done(0, ids.size)
         }
         return when (val result = api.sync(payload)) {
             is ApiResult.Success -> {
-                val confirmed = result.value.syncedIds.toSet().intersect(ids.toSet()).toList()
+                val ack = result.value
+                if (ack.results.isNotEmpty()) return applyItemResults(records, ack.results)
+                val confirmed = ack.syncedIds.toSet().intersect(ids.toSet()).toList()
                 store.markSynced(confirmed, clock())
                 val missing = records.filter { it.screeningId !in confirmed }
                 if (missing.isNotEmpty()) failAttempt(missing, "Server did not confirm this record.")
@@ -100,7 +109,7 @@ class SyncEngine(
                     for (record in records) {
                         val claimed = store.claim(listOf(record.screeningId), clock())
                         if (claimed.isEmpty()) continue
-                        when (val single = send(listOf(record))) {
+                        when (val single = send(listOf(record), contract)) {
                             is Step.Done -> { ok += single.synced; bad += single.failed }
                             is Step.Stop -> return single
                         }
@@ -110,6 +119,27 @@ class SyncEngine(
                 else -> { store.markAttemptFailed(ids, SyncState.FAILED, result.userMessage); Step.Done(0, 1) }
             }
         }
+    }
+
+    /**
+     * Contract 1.0 per-record outcomes (API_CONTRACT.md §4.2/§6): accepted/duplicate → synced; conflict and
+     * rejected leave the queue but the local copy is always kept; anything unacknowledged stays queued.
+     */
+    private suspend fun applyItemResults(records: List<ScreeningEntity>, results: List<`in`.abhaynayan.app.net.SyncItem>): Step {
+        val byId = results.filter { it.id != null }.groupBy { it.id!! }
+        var ok = 0; var bad = 0
+        val unacknowledged = mutableListOf<ScreeningEntity>()
+        for (record in records) {
+            val outcome = byId[record.screeningId]?.let { items -> items.firstOrNull { it.status == "accepted" || it.status == "duplicate" } ?: items.first() }
+            when (outcome?.status) {
+                "accepted", "duplicate" -> { store.markSynced(listOf(record.screeningId), clock()); ok++ }
+                "conflict" -> { store.setState(listOf(record.screeningId), SyncState.CONFLICT, "The server already holds a different record with this ID. This copy is kept on the phone."); bad++ }
+                "rejected" -> { store.setState(listOf(record.screeningId), SyncState.REJECTED, "The server did not accept this record (${outcome.errorCode ?: "validation"}). It is kept on the phone."); bad++ }
+                else -> unacknowledged += record
+            }
+        }
+        if (unacknowledged.isNotEmpty()) failAttempt(unacknowledged, "Server did not confirm this record.")
+        return Step.Done(ok, bad)
     }
 
     private suspend fun failAttempt(records: List<ScreeningEntity>, message: String) {

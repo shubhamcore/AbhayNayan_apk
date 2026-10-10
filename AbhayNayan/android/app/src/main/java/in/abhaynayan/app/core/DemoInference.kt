@@ -14,8 +14,9 @@ enum class ScreeningType(val wireName: String, val displayName: String, val biom
 }
 
 /**
- * A fixed synthetic fixture. Values, tags, and placeholder scores match the website backend's
- * `DEMO_CASES` (backend/app/core/inference.py) so synced demo records stay consistent.
+ * A fixed synthetic fixture. Values and tags match the website backend's `DEMO_CASES`
+ * (backend/app/core/inference.py, API contract 1.0). The two placeholder scores are kept only for
+ * servers on the pre-1.0 contract; contract 1.0 sends `null` because a fixture has no confidence or quality.
  */
 data class DemoCase(
     val id: String,
@@ -35,7 +36,7 @@ object DemoInference {
             DemoCase("maternal-high", "Higher-review (synthetic)", 7.8, "g/dL", "DEMO_HIGH", .79, .90),
         )
         ScreeningType.NEONATAL_JAUNDICE -> listOf(
-            DemoCase("jaundice-review", "Review case (synthetic)", 12.8, "mg/dL", "REQUIRES_REVIEW", .79, .90),
+            DemoCase("jaundice-review", "Review case (synthetic)", 12.8, "mg/dL", "DEMO_REVIEW", .79, .90),
             DemoCase("jaundice-escalate", "Escalation-like (synthetic)", 18.0, "mg/dL", "DEMO_ESCALATE", .76, .88),
         )
     }
@@ -43,9 +44,14 @@ object DemoInference {
     fun byId(type: ScreeningType, caseId: String): DemoCase =
         cases(type).firstOrNull { it.id == caseId } ?: error("Select a named synthetic demo case.")
 
+    /** Tags renamed by API contract 1.0 (REQUIRES_REVIEW → DEMO_REVIEW); old records still resolve. */
+    private val LEGACY_TAGS = mapOf("REQUIRES_REVIEW" to "DEMO_REVIEW")
+
     /** Resolves the fixture of a stored record; v1 records only kept the demo tag. */
-    fun resolve(type: ScreeningType, caseId: String?, demoTag: String?): DemoCase? =
-        cases(type).firstOrNull { it.id == caseId } ?: cases(type).firstOrNull { it.demoTag == demoTag }
+    fun resolve(type: ScreeningType, caseId: String?, demoTag: String?): DemoCase? {
+        val tag = LEGACY_TAGS[demoTag] ?: demoTag
+        return cases(type).firstOrNull { it.id == caseId } ?: cases(type).firstOrNull { it.demoTag == tag }
+    }
 }
 
 data class ModelLoadStatus(

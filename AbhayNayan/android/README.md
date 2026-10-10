@@ -16,6 +16,7 @@ An offline-first screening workflow and counselling assistant for ASHA workers, 
 - **Offline-first storage:** Room v2 (auto-migrated from v1; existing records kept). Records are `PENDING → SYNCING → SYNCED` or `FAILED`, or `LOCAL_ONLY` when the backend contract cannot accept them. The WorkManager sync is duplicate-safe.
 - **Backend:** health, sync, counselling (Gemini runs server-side only), referral + PDF link, and dashboard counts. See [../docs/ANDROID_API_INTEGRATION.md](../docs/ANDROID_API_INTEGRATION.md).
 - **Counselling:** on-device text in three languages (the demo text matches the backend fallback exactly). Server text is used when available. Android TTS has play/stop, with a Hindi voice used for Bhojpuri when needed.
+- **Screening report (PDF):** after **Save & view report**, every record (including "no estimate" records) has a PDF generated on the phone, offline: result or "no estimate", next step, details, image checks, counselling in the chosen language, and limitations. Share it (WhatsApp, Drive, print) or open it; no photo or nickname is included.
 - **Referral & interoperability:** a structured referral summary to share, a server referral brief for demo records, and pseudonymous FHIR R4-style JSON with the same resources and IDs as the backend. Records without an estimate use `dataAbsentReason`.
 - **Privacy:** photos are held in memory only and are never saved or uploaded. Profiles get random IDs, and nicknames never leave the phone. Logs are redacted (`SafeLog`). Backup/device transfer is excluded, cleartext is allowed in debug builds only for local development hosts, and there are no API keys in the app.
 
@@ -56,9 +57,11 @@ Verified results, sizes, and checks are in [../docs/ANDROID_BUILD.md](../docs/AN
 
 ## Backend configuration
 
+Default (debug and release): the deployed backend `https://abhaynayan-web.onrender.com`. The app reads its `api_contract_version` and uses contract 1.0 or the older 0.1 format automatically. The first request after the free-tier server has been idle can take up to a minute.
+
 | Situation | URL (Settings › Backend server) |
 |---|---|
-| Emulator + `uvicorn` on the dev machine | `http://10.0.2.2:8000` (debug default) |
+| Emulator + `uvicorn` on the dev machine | `http://10.0.2.2:8000` (debug builds only) |
 | Physical phone + dev machine over USB | `adb reverse tcp:8000 tcp:8000`, then `http://127.0.0.1:8000` |
 | Deployed backend | `https://…` (required for release builds; set `-PabhaynayanReleaseApiUrl=https://…` or enter it in Settings) |
 | No backend | Switch the backend off; everything works offline and records stay on the phone |

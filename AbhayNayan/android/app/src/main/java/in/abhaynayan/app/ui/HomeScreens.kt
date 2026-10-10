@@ -156,6 +156,8 @@ fun syncLabel(state: String): Pair<String, Boolean> = when (state) {
     SyncState.PENDING -> "Waiting to sync" to false
     SyncState.SYNCING -> "Syncing…" to false
     SyncState.FAILED -> "Sync failed" to false
+    SyncState.CONFLICT -> "Server has a different copy" to false
+    SyncState.REJECTED -> "Not accepted by server" to false
     else -> "On this phone only" to false
 }
 

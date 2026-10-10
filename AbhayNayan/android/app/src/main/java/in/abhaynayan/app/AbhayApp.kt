@@ -26,6 +26,8 @@ class AbhayApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        // Reports are regenerated on demand; none are kept between sessions.
+        `in`.abhaynayan.app.services.PdfReportWriter.clear(this)
         // Pick up records left PENDING by a previous session once connectivity allows.
         SyncWorker.enqueue(this)
     }

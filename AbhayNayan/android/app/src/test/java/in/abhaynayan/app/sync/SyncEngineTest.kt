@@ -58,8 +58,8 @@ class SyncEngineTest {
         val outcome = SyncEngine(store, api).run()
         assertEquals(2, outcome.synced)
         assertEquals(SyncState.SYNCED, store.state("scr-a1111111"))
-        assertEquals(1, server.requests.size)
-        assertFalse(server.requests.single().body.contains(TestFixtures.demoPatient.displayName))
+        assertEquals(1, server.requestsTo("/api/sync").size)
+        assertFalse(server.requestsTo("/api/sync").single().body.contains(TestFixtures.demoPatient.displayName))
     }
 
     @Test fun ineligibleRecordsStayLocalAndAreNeverSent() = runBlocking {
@@ -69,7 +69,7 @@ class SyncEngineTest {
         val outcome = SyncEngine(store, api).run()
         assertEquals(1, outcome.localOnly)
         assertEquals(SyncState.LOCAL_ONLY, store.state(local.screeningId))
-        assertTrue(server.requests.isEmpty())
+        assertTrue(server.requestsTo("/api/sync").isEmpty())
     }
 
     @Test fun serverErrorKeepsRecordsPendingForRetryThenSucceeds() = runBlocking {
@@ -130,8 +130,52 @@ class SyncEngineTest {
         val store = FakeStore(listOf(TestFixtures.demoRecord("scr-g7777777")), patients)
         val engine = SyncEngine(store, api)
         listOf(async { engine.run() }, async { engine.run() }).awaitAll()
-        val sentIds = server.requests.flatMap { r -> JSONObject(r.body).getJSONArray("records").let { a -> (0 until a.length()).map { a.getJSONObject(it).getString("id") } } }
+        val sentIds = server.requestsTo("/api/sync").flatMap { r -> JSONObject(r.body).getJSONArray("records").let { a -> (0 until a.length()).map { a.getJSONObject(it).getString("id") } } }
         assertEquals(listOf("scr-g7777777"), sentIds)
+    }
+
+    @Test fun contract10PerRecordResultsAreAppliedAndLocalCopiesKept() = runBlocking {
+        server.on("/api/sync", 200, """{"accepted":1,"duplicate":1,"conflict":1,"rejected":1,
+            "synced_ids":["scr-acc00000","scr-dup00000"],
+            "results":[{"id":"scr-acc00000","status":"accepted","error":null},
+                       {"id":"scr-dup00000","status":"duplicate","error":null},
+                       {"id":"scr-con00000","status":"conflict","error":{"code":"ID_CONFLICT","status":409,"retryable":false,"message":"x","fields":[]}},
+                       {"id":"scr-rej00000","status":"rejected","error":{"code":"VALIDATION_ERROR","status":422,"retryable":false,"message":"x","fields":[]}}],
+            "server_time":"2026-10-10T08:12:13Z","api_contract_version":"1.0.0"}""")
+        val ids = listOf("scr-acc00000", "scr-dup00000", "scr-con00000", "scr-rej00000", "scr-unack000")
+        val store = FakeStore(ids.map { TestFixtures.demoRecord(it) }, patients)
+        val outcome = SyncEngine(store, api).run()
+        assertEquals(2, outcome.synced)
+        assertEquals(SyncState.SYNCED, store.state("scr-acc00000"))
+        assertEquals(SyncState.SYNCED, store.state("scr-dup00000"))
+        assertEquals(SyncState.CONFLICT, store.state("scr-con00000"))
+        assertEquals(SyncState.REJECTED, store.state("scr-rej00000"))
+        assertTrue(store.rows.getValue("scr-rej00000").lastSyncError!!.contains("VALIDATION_ERROR"))
+        assertEquals("unacknowledged records stay queued", SyncState.PENDING, store.state("scr-unack000"))
+        assertEquals(5, store.rows.size) // nothing deleted locally
+        // Contract 1.0 body: nullable placeholders and provenance were sent.
+        val sent = JSONObject(server.requestsTo("/api/sync").single().body).getJSONArray("records").getJSONObject(0).getJSONObject("result")
+        assertTrue(sent.isNull("confidence"))
+        assertEquals("DEMO_SYNTHETIC", sent.getString("provenance"))
+    }
+
+    @Test fun legacyServerReceivesPre10Payload() = runBlocking {
+        server.on("/api/health", 200, """{"status":"ok","mode":"PROTOTYPE_DEMO","gemini_configured":false}""")
+        ackAll()
+        val store = FakeStore(listOf(TestFixtures.demoRecord("scr-leg00000")), patients)
+        SyncEngine(store, api).run()
+        assertEquals(SyncState.SYNCED, store.state("scr-leg00000"))
+        val sent = JSONObject(server.requestsTo("/api/sync").single().body).getJSONArray("records").getJSONObject(0)
+        assertFalse(sent.has("id_origin"))
+        assertEquals(.91, sent.getJSONObject("result").getDouble("quality_score"), 1e-9)
+    }
+
+    @Test fun unreachableServerKeepsQueueAndRetriesLater() = runBlocking {
+        val dead = ApiClient({ "http://127.0.0.1:9" }, UrlConnectionTransport(connectTimeoutMs = 1_000, readTimeoutMs = 1_000))
+        val store = FakeStore(listOf(TestFixtures.demoRecord("scr-off00000")), patients)
+        val outcome = SyncEngine(store, dead).run()
+        assertTrue(outcome.retryLater)
+        assertEquals(SyncState.PENDING, store.state("scr-off00000"))
     }
 
     @Test fun notConfiguredLeavesQueueUntouched() = runBlocking {

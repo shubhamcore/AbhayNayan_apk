@@ -4,6 +4,12 @@
 
 This is a hackathon **prototype source release**, not a clinical product. It contains the runnable FastAPI-served PWA, demo API, tests, documentation, native Android source, Docker configuration, and a debug-signed Android APK. The APK is build-verified and unit-tested but has not been installed or exercised on a device/emulator.
 
+## Android 0.3.0-demo (10 October 2026)
+
+- Every saved screening now has a **PDF report generated on the phone** (works offline, also for "no estimate" records), with Share/Open buttons at the top of the record screen. The save button reads **Save & view report**.
+- Default backend is the deployed `https://abhaynayan-web.onrender.com`; phones upgraded from 0.2.0 switch automatically unless a URL was saved in Settings.
+- Supports **API contract 1.0** (null fixture scores, provenance, context, per-record sync results, error envelope, counselling `request_id`, referral reason), with automatic fallback for pre-1.0 servers. Verified live against both.
+
 ## Android 0.2.0-demo (10 October 2026)
 
 - Rebuilt the native app around separate maternal and newborn workflows, four explicit result modes, a fail-closed typed model contract (no model bundled), Camera2 `ImageReader` pair capture with exposure locking and validation, objective image-quality checks, Room v2 offline queue with WorkManager sync, backend counselling/referral integration, escalation-only referral rules, and pseudonymous FHIR export.
