@@ -1,0 +1,159 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 1,
+    "identityHash": "c7e7ba3e8f485b649a70d47df2174e19",
+    "entities": [
+      {
+        "tableName": "patients",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`patientId` TEXT NOT NULL, `displayName` TEXT NOT NULL, `isSyntheticDemo` INTEGER NOT NULL, `consentRecorded` INTEGER NOT NULL, `createdAtUtc` TEXT NOT NULL, PRIMARY KEY(`patientId`))",
+        "fields": [
+          {
+            "fieldPath": "patientId",
+            "columnName": "patientId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "displayName",
+            "columnName": "displayName",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isSyntheticDemo",
+            "columnName": "isSyntheticDemo",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "consentRecorded",
+            "columnName": "consentRecorded",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAtUtc",
+            "columnName": "createdAtUtc",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "patientId"
+          ]
+        }
+      },
+      {
+        "tableName": "screenings",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`screeningId` TEXT NOT NULL, `patientId` TEXT NOT NULL, `screeningType` TEXT NOT NULL, `estimate` REAL NOT NULL, `unit` TEXT NOT NULL, `demoTag` TEXT NOT NULL, `confidencePlaceholder` REAL NOT NULL, `captureQualityProxy` REAL NOT NULL, `modelMode` TEXT NOT NULL, `synthetic` INTEGER NOT NULL, `confirmationRequired` INTEGER NOT NULL, `createdAtUtc` TEXT NOT NULL, PRIMARY KEY(`screeningId`))",
+        "fields": [
+          {
+            "fieldPath": "screeningId",
+            "columnName": "screeningId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "patientId",
+            "columnName": "patientId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "screeningType",
+            "columnName": "screeningType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "estimate",
+            "columnName": "estimate",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "unit",
+            "columnName": "unit",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "demoTag",
+            "columnName": "demoTag",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "confidencePlaceholder",
+            "columnName": "confidencePlaceholder",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "captureQualityProxy",
+            "columnName": "captureQualityProxy",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "modelMode",
+            "columnName": "modelMode",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "synthetic",
+            "columnName": "synthetic",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "confirmationRequired",
+            "columnName": "confirmationRequired",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAtUtc",
+            "columnName": "createdAtUtc",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "screeningId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_screenings_patientId",
+            "unique": false,
+            "columnNames": [
+              "patientId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_screenings_patientId` ON `${TABLE_NAME}` (`patientId`)"
+          },
+          {
+            "name": "index_screenings_createdAtUtc",
+            "unique": false,
+            "columnNames": [
+              "createdAtUtc"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_screenings_createdAtUtc` ON `${TABLE_NAME}` (`createdAtUtc`)"
+          }
+        ]
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'c7e7ba3e8f485b649a70d47df2174e19')"
+    ]
+  }
+}
