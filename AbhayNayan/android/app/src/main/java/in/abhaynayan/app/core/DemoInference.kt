@@ -2,13 +2,22 @@ package `in`.abhaynayan.app.core
 
 import java.time.Instant
 
-const val DEMO_SAFETY_NOTE = "Synthetic prototype estimate only — not a diagnosis or validated clinical measurement. Confirm with appropriate clinical testing and local protocol."
+const val DEMO_SAFETY_NOTE = "Synthetic demonstration estimate only. Not a diagnosis or validated measurement. Confirm with appropriate clinical testing and local protocol."
 
-enum class ScreeningType(val wireName: String, val displayName: String) {
-    MATERNAL_ANEMIA("maternal_anemia", "Maternal anemia"),
-    NEONATAL_JAUNDICE("neonatal_jaundice", "Neonatal jaundice"),
+enum class ScreeningType(val wireName: String, val displayName: String, val biomarker: Biomarker) {
+    MATERNAL_ANEMIA("maternal_anemia", "Maternal anemia", Biomarker.HEMOGLOBIN),
+    NEONATAL_JAUNDICE("neonatal_jaundice", "Neonatal jaundice", Biomarker.BILIRUBIN);
+
+    companion object {
+        fun fromWire(value: String): ScreeningType? = entries.firstOrNull { it.wireName == value }
+    }
 }
 
+/**
+ * A fixed synthetic fixture. Values and tags match the website backend's `DEMO_CASES`
+ * (backend/app/core/inference.py, API contract 1.0). The two placeholder scores are kept only for
+ * servers on the pre-1.0 contract; contract 1.0 sends `null` because a fixture has no confidence or quality.
+ */
 data class DemoCase(
     val id: String,
     val label: String,
@@ -22,18 +31,27 @@ data class DemoCase(
 object DemoInference {
     fun cases(type: ScreeningType): List<DemoCase> = when (type) {
         ScreeningType.MATERNAL_ANEMIA -> listOf(
-            DemoCase("maternal-normal", "Normal-like synthetic", 11.8, "g/dL", "DEMO_LOW", .82, .91),
-            DemoCase("maternal-moderate", "Moderate-risk-like synthetic", 9.4, "g/dL", "DEMO_MODERATE", .82, .91),
-            DemoCase("maternal-high", "Higher-review synthetic", 7.8, "g/dL", "DEMO_HIGH", .79, .90),
+            DemoCase("maternal-normal", "Normal-like (synthetic)", 11.8, "g/dL", "DEMO_LOW", .82, .91),
+            DemoCase("maternal-moderate", "Moderate-risk-like (synthetic)", 9.4, "g/dL", "DEMO_MODERATE", .82, .91),
+            DemoCase("maternal-high", "Higher-review (synthetic)", 7.8, "g/dL", "DEMO_HIGH", .79, .90),
         )
         ScreeningType.NEONATAL_JAUNDICE -> listOf(
-            DemoCase("jaundice-review", "Review case synthetic", 12.8, "mg/dL", "REQUIRES_REVIEW", .79, .90),
-            DemoCase("jaundice-escalate", "Escalation-like synthetic", 18.0, "mg/dL", "DEMO_ESCALATE", .76, .88),
+            DemoCase("jaundice-review", "Review case (synthetic)", 12.8, "mg/dL", "DEMO_REVIEW", .79, .90),
+            DemoCase("jaundice-escalate", "Escalation-like (synthetic)", 18.0, "mg/dL", "DEMO_ESCALATE", .76, .88),
         )
     }
 
     fun byId(type: ScreeningType, caseId: String): DemoCase =
         cases(type).firstOrNull { it.id == caseId } ?: error("Select a named synthetic demo case.")
+
+    /** Tags renamed by API contract 1.0 (REQUIRES_REVIEW → DEMO_REVIEW); old records still resolve. */
+    private val LEGACY_TAGS = mapOf("REQUIRES_REVIEW" to "DEMO_REVIEW")
+
+    /** Resolves the fixture of a stored record; v1 records only kept the demo tag. */
+    fun resolve(type: ScreeningType, caseId: String?, demoTag: String?): DemoCase? {
+        val tag = LEGACY_TAGS[demoTag] ?: demoTag
+        return cases(type).firstOrNull { it.id == caseId } ?: cases(type).firstOrNull { it.demoTag == tag }
+    }
 }
 
 data class ModelLoadStatus(
@@ -83,7 +101,7 @@ class DemoScreeningModel(private val screeningType: ScreeningType) : ScreeningMo
             value = selected.estimate,
             unit = selected.unit,
             confidence = null, // A demo fixture has no measured confidence.
-            modelVersion = "fixed-demo-fixtures-v1",
+            modelVersion = DEMO_MODEL_VERSION,
             processingTimeMs = elapsedMs,
             mode = "DEMO",
             synthetic = true,
@@ -93,6 +111,8 @@ class DemoScreeningModel(private val screeningType: ScreeningType) : ScreeningMo
 
     override fun close() { loaded = false }
 }
+
+const val DEMO_MODEL_VERSION = "fixed-demo-fixtures-v1"
 
 /** Fail-closed placeholder until a model artifact, model card, and input/output contract exist. */
 class MissingClinicalModel(private val expectedModelPath: String = "models/clinical_model.tflite") : ScreeningModel {
@@ -159,9 +179,10 @@ data class LocalScreeningResult(
     val demoCase: DemoCase,
     val generatedAtUtc: String = Instant.now().toString(),
     val safetyNote: String = DEMO_SAFETY_NOTE,
-    val modelVersion: String = "fixed-demo-fixtures-v1",
+    val modelVersion: String = DEMO_MODEL_VERSION,
 ) {
     val synthetic: Boolean get() = true
     val modelMode: String get() = "DEMO"
+    val resultMode: ResultMode get() = ResultMode.DEMO_SYNTHETIC
     val requiresConfirmation: Boolean get() = true
 }

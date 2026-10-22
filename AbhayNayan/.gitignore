@@ -20,3 +20,6 @@ android/**/build/
 android/**/*.apk
 *.apk
 .DS_Store
+
+# Research model artifacts (derived from datasets without verified redistribution rights; see docs/edge_ai.md)
+android/app/src/main/assets/models/

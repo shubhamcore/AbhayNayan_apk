@@ -8,21 +8,22 @@
 ```mermaid
 flowchart TD
   subgraph ANDROID[Native Android source · Kotlin / Compose]
-    A[Patient profile stored in Room] --> B[Camera2 rear preview or abstract synthetic chart]
-    B --> C[Ambient preview snapshot]
-    C --> D{Torch / flash supported?}
-    D -- yes --> E[Best-effort flash preview snapshot]
-    D -- no / error --> F[Ambient-only fallback]
-    E --> G[Manual geometric ROI crop]
-    F --> G
-    G --> H[Prototype clipped F minus A visualization]
-    H --> I[RGB, ratios, CIE Lab*, YCrCb, variance, valid-pixel features]
-    I --> J[Developer preview / engineering checks]
-    J -. not used as biomarker inference input .-> K[Select named fixed synthetic case]
-    K --> L[Safety-labelled demo result]
-    L --> M[Local English / Hindi / Bhojpuri copy + optional TTS]
-    L --> N[Room screening history]
-    L --> O[FHIR-style local JSON / referral brief share]
+    A[Pseudonymous profile + workflow-specific details + danger signs, Room] --> B[Camera2 ImageReader YUV, gallery import, or demo chart]
+    B --> C{Flash and exposure lock supported?}
+    C -- yes --> E[Ambient + torch pair with locked exposure and capture metadata]
+    C -- no --> F[Ambient-only fallback, stated on screen]
+    E --> V[Pair validation: exposure/ISO, timing, alignment, clipping, flash signal]
+    F --> G[Quality gate: size, light, glare, blur, target, motion + manual ROI confirmation]
+    V --> G
+    G --> J[Technical details: ΔI, EI, RGB/Lab features, research only]
+    G --> K{Model status}
+    K -- no valid model --> L1[DISABLED_NO_VALID_MODEL: no value]
+    K -- demo profile + chosen fixture --> L2[DEMO_SYNTHETIC: fixed value, not from image]
+    L1 --> R[Deterministic escalation-only referral rules]
+    L2 --> R
+    R --> N[Room record + WorkManager sync queue → /api/sync for demo records]
+    R --> M[Counselling: /api/counselling or on-device EN/HI/BHO text + TTS]
+    R --> O[Referral summary, /api/referrals PDF, pseudonymous FHIR JSON]
   end
 
   subgraph PWA[FastAPI-served installable PWA]
@@ -42,8 +43,8 @@ flowchart TD
 
 | Component | Current prototype implementation | Not implemented / qualification |
 |---|---|---|
-| Native app shell | Kotlin, Jetpack Compose, Camera permission, Room-local profiles/screenings, local language copy/TTS, share intents; Gradle build and 19 unit tests passed, debug APK built | No emulator/physical-device installation or runtime test; Android Studio GUI not launched |
-| Camera | Camera2 rear-camera preview; ambient `TextureView` snapshot; best-effort torch-on preview snapshot; ambient-only fallback when unsupported | Not a still `ImageReader` capture; no AE/ISO lock; no camera benchmark/device matrix |
+| Native app shell | Kotlin, Jetpack Compose + ViewModel, separate maternal/newborn workflows, Room v2 offline queue, WorkManager sync, backend client, counselling/TTS, referral/FHIR export; 101 unit tests pass, lint 0 errors, debug APK built (0.2.0-demo) | No emulator/physical-device installation or runtime test |
+| Camera | Camera2 `ImageReader` YUV capture; ambient + torch pair with manual-sensor or AE/AWB lock and metadata validation; ambient-only fallback when unsupported | No device testing yet; no camera benchmark/device matrix; ISP tone curve unknown |
 | Quality gate | Local brightness/edge engineering proxy and explicit manual region confirmation | No MediaPipe landmarks, face/eye/blink/distance/motion detector, anatomical segmentation, or validated capture thresholds |
 | ROI / vision | User-positioned geometric ROI crop; positive clipped flash-minus-ambient preview-difference visualization; RGB means/ratios/stddev, CIE Lab*, YCrCb, chromaticity, valid-pixel fraction | No biological/anatomical ROI detector, color reference card, camera calibration, or claim of illumination invariance |
 | Inference | `ScreeningModel` load/predict/close boundary, named-case DEMO adapter, and fail-closed missing-clinical-model adapter; result can follow a local camera capture only for a synthetic demo profile and is clearly independent from camera data | No TFLite weights/runtime adapter or model-card tensor contract, no clinical model, no pixel-to-biomarker mapping, and no clinical confidence estimate; DEMO confidence is null |
@@ -70,7 +71,7 @@ flowchart TD
 
 ## Roadmap
 
-1. Gradle compilation, 19 Android unit tests, and debug APK assembly now pass locally on JDK 17/API 36; next install on an emulator/real device and verify Camera2 lifecycle and flash fallback.
+1. Gradle compilation, 101 Android unit tests, lint, and debug APK assembly pass (0.2.0-demo); next install on an emulator/real device and run the smoke test in `docs/ANDROID_BUILD.md`.
 2. Add and license-review a bundled MediaPipe model; implement anatomy-specific ROI and quality checks with safe thresholds, then test across devices and capture conditions.
 3. Define the TFLite model card/tensor contract before adding weights; load and time real local inference, and retain a separate explicit synthetic demo path.
 4. Complete native patient demographics, referrals/history/settings and structured backend copilot integration without exposing client API secrets.

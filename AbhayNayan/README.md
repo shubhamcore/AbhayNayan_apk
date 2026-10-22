@@ -3,6 +3,8 @@
 **Edge-AI Optical Biomarker Screening & Multimodal Clinical Protocol Copilot**  
 **Tagline:** “Bringing AI-assisted screening and clinical guidance to the doorstep.”  
 
+> **Research models (22 October 2026):** a developer toggle (Settings → *Research models (developer)*, off by default) runs on-device research models: hemoglobin in g/dL, and a newborn jaundice/normal **dataset-class** score that is *not* bilirubin. Their outputs are labelled `EXPERIMENTAL_RESEARCH_ONLY`, and their files are only present in locally built research APKs. They are not validated and must never guide care. See [docs/edge_ai.md](docs/edge_ai.md).
+
 > **Safety boundary:** This is a hackathon prototype, not a medical device, approved EHR, or diagnostic tool. Every numeric screening value in the running app is a fixed **synthetic demonstration fixture**. It is not computed from the live camera, imported image, optical features, or a validated clinical model. Do not use it to diagnose, triage, delay care, or change treatment. Confirm with appropriate clinical testing and qualified clinicians under local protocol.
 
 ## What is implemented
@@ -17,9 +19,9 @@
 
 ## Important implementation limits
 
-- No approved or clinically validated anemia or bilirubin model is bundled. Android has a `ScreeningModel` load/predict/close boundary with a fixed-case DEMO adapter and fail-closed missing-model adapter; there is no TensorFlow Lite runtime adapter, model weights, or model-specific tensor contract.
+- No approved or clinically validated anemia or bilirubin model is bundled. Android has a `ScreeningModel` load/predict/close boundary with a fixed-case DEMO adapter and fail-closed missing-model adapter; there is no TensorFlow Lite runtime adapter or tensor contract. Research colour-feature models run in pure Kotlin behind a developer toggle ([docs/edge_ai.md](docs/edge_ai.md)).
 - Browser camera frames and imported images are analyzed locally and are not sent to FastAPI or Gemini. Android Camera2 preview frames also remain in memory. Image features are for pipeline visualization only and do not drive the fixed demo estimate.
-- There is no MediaPipe/face-eye landmark model, blink/motion/distance detector, or anatomical segmentation. ROI alignment is a manual geometric guide. Android flash/ambient frames are best-effort preview snapshots with auto exposure; differential processing is only an experimental visualization, not calibrated or proven lighting-invariant.
+- There is no MediaPipe/face-eye landmark model, blink/motion/distance detector, or anatomical segmentation. ROI alignment is a manual geometric guide. Android captures an exposure-locked ambient + flash pair only where the camera supports it and rejects non-comparable pairs; differential processing is only an experimental visualization, not calibrated or proven lighting-invariant. See `docs/ANDROID_STATUS.md`.
 - A small, internal grouped-CV Ridge baseline exists as disabled research material. It is not used by the app. See [dataset audit](docs/dataset-audit.md).
 - Android source, Gradle 8.13 wrapper, CI workflow, and a locally build-verified debug APK are included in the refreshed release ZIP. Android unit tests and APK assembly passed under JDK 17 / Android SDK 36, but the APK has not been installed or tested on a device/emulator; the Android Studio GUI was not launched. See [Android status](docs/ANDROID_STATUS.md). The PWA and native Android app are separate implementations; do not represent one as the other.
 - Docker configuration is provided but has not been built in the current environment because Docker is not installed there.
