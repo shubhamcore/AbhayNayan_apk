@@ -273,7 +273,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             }
             // The jaundice-class score is separate research output: it never fills the bilirubin estimate.
             val scorer = edge.value.jaundiceClass
-            val (classScore, classError) = if (outcome is AnalysisOutcome.Ready && d.type.biomarker == Biomarker.BILIRUBIN && scorer != null) {
+            val (classScore, classError) = if (outcome is AnalysisOutcome.Ready && d.type.biomarker == Biomarker.BILIRUBIN && scorer != null &&
+                patient.isSyntheticDemo) {
                 withContext(Dispatchers.Default) {
                     try {
                         val input = WorkflowEngine.modelInput(assessment) ?: error("No usable region.")

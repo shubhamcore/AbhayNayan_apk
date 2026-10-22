@@ -66,7 +66,7 @@ class WorkflowEngineTest {
     @Test fun maternalWorkflowNeverCallsTheBilirubinModel() {
         val hb = RecordingHb(ResultMode.EXPERIMENTAL_RESEARCH_ONLY) { 11.0 }
         val bili = RecordingBili()
-        val ready = analyze(patient = TestFixtures.realPatient, hb = hb, bili = bili) as AnalysisOutcome.Ready
+        val ready = analyze(patient = TestFixtures.demoPatient, hb = hb, bili = bili) as AnalysisOutcome.Ready
         assertEquals(1, hb.calls); assertEquals(0, bili.calls)
         assertEquals(ResultMode.EXPERIMENTAL_RESEARCH_ONLY.name, ready.record.resultMode)
         assertEquals(11.0, ready.record.estimate!!, 1e-6)
@@ -75,18 +75,18 @@ class WorkflowEngineTest {
     @Test fun neonatalWorkflowUsesBilirubinModelWithAgeAndNeverHemoglobin() {
         val hb = RecordingHb(ResultMode.EXPERIMENTAL_RESEARCH_ONLY) { 11.0 }
         val bili = RecordingBili()
-        analyze(patient = TestFixtures.realPatient, hb = hb, bili = bili, type = ScreeningType.NEONATAL_JAUNDICE,
+        analyze(patient = TestFixtures.demoPatient, hb = hb, bili = bili, type = ScreeningType.NEONATAL_JAUNDICE,
             meta = ScreeningMetadata(infantAgeHours = 48, visibleJaundice = false))
         assertEquals(0, hb.calls); assertEquals(1, bili.calls)
     }
 
     @Test fun inferenceExceptionsAndInvalidOutputsNeverBecomeResults() {
         val throwing = RecordingHb(ResultMode.EXPERIMENTAL_RESEARCH_ONLY) { error("interpreter crashed") }
-        assertTrue(analyze(patient = TestFixtures.realPatient, hb = throwing) is AnalysisOutcome.InferenceFailed)
+        assertTrue(analyze(patient = TestFixtures.demoPatient, hb = throwing) is AnalysisOutcome.InferenceFailed)
         val nan = RecordingHb(ResultMode.EXPERIMENTAL_RESEARCH_ONLY) { Double.NaN }
-        assertTrue(analyze(patient = TestFixtures.realPatient, hb = nan) is AnalysisOutcome.InferenceFailed)
+        assertTrue(analyze(patient = TestFixtures.demoPatient, hb = nan) is AnalysisOutcome.InferenceFailed)
         val absurd = RecordingHb(ResultMode.EXPERIMENTAL_RESEARCH_ONLY) { 99.0 }
-        assertTrue(analyze(patient = TestFixtures.realPatient, hb = absurd) is AnalysisOutcome.InferenceFailed)
+        assertTrue(analyze(patient = TestFixtures.demoPatient, hb = absurd) is AnalysisOutcome.InferenceFailed)
     }
 
     private fun shiftedFlash(frames: CapturedFrames, by: Int): RgbImage {

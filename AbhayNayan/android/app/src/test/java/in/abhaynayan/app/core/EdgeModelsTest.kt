@@ -1,6 +1,7 @@
 package `in`.abhaynayan.app.core
 
 import `in`.abhaynayan.app.TestFixtures
+import `in`.abhaynayan.app.data.PatientEntity
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
@@ -121,8 +122,8 @@ class EdgeModelsTest {
         syntheticChart = false,
     )
 
-    private fun run(hb: HemoglobinModel, assessment: CaptureAssessment = maskedAssessment) = WorkflowEngine.analyze(
-        ScreeningType.MATERNAL_ANEMIA, TestFixtures.realPatient, ScreeningMetadata(pregnancy = PregnancyStatus.PREGNANT, gestationalWeek = 20),
+    private fun run(hb: HemoglobinModel, assessment: CaptureAssessment = maskedAssessment, patient: PatientEntity = TestFixtures.demoPatient) = WorkflowEngine.analyze(
+        ScreeningType.MATERNAL_ANEMIA, patient, ScreeningMetadata(pregnancy = PregnancyStatus.PREGNANT, gestationalWeek = 20),
         assessment, true, null, hb, UnavailableBilirubinModel(), "ASHA-1", "PHC", "scr-edge0001", "2026-10-22T10:00:00Z",
     )
 
@@ -134,6 +135,14 @@ class EdgeModelsTest {
         assertEquals(ResultMode.EXPERIMENTAL_RESEARCH_ONLY.name, ready.record.resultMode)
         assertEquals(false, ready.record.synthetic)
         assertEquals("NONE", ready.record.demoTag)
+    }
+
+    @Test fun experimentalEdgeModelNeverAttachesToARealPerson() {
+        val hb = EdgeModelLoader.load(hbAssets(), experimentalOptIn = true).hemoglobin
+        val ready = run(hb, patient = TestFixtures.realPatient) as AnalysisOutcome.Ready
+        assertEquals(null, ready.record.estimate)
+        assertEquals(ResultMode.DISABLED_NO_VALID_MODEL.name, ready.record.resultMode)
+        assertEquals(ResultMode.DISABLED_NO_VALID_MODEL, ready.modelStatus!!.mode)
     }
 
     @Test fun implausibleOrFailingModelNeverYieldsAValue() {

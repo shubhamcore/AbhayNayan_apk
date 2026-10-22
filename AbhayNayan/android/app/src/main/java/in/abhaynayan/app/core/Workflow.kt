@@ -113,6 +113,13 @@ object WorkflowEngine {
         if (!status.mode.producesEstimate) {
             return AnalysisOutcome.Ready(base.copy(referralUrgency = urgency.name, modelVersion = status.version ?: "none"), status)
         }
+        // Same rule as the server (EXPERIMENTAL_REQUIRES_RESEARCH_PROFILE): research output never attaches to a real person.
+        if (status.mode == ResultMode.EXPERIMENTAL_RESEARCH_ONLY && !patient.isSyntheticDemo) {
+            return AnalysisOutcome.Ready(base.copy(referralUrgency = urgency.name, modelVersion = "none"), status.copy(
+                mode = ResultMode.DISABLED_NO_VALID_MODEL,
+                reasons = listOf("Experimental research models run only on synthetic demo/research profiles, never on a real person's record."),
+            ))
+        }
         val roi = modelInput(assessment) ?: return AnalysisOutcome.InferenceFailed("The target region could not be extracted. Retake.")
         val value = try {
             when (type.biomarker) {

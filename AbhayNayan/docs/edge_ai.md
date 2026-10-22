@@ -54,6 +54,7 @@ This is a line-for-line port of `backend/app/ml/features.py`:
 - Settings → **Research models (developer)** → "Use experimental on-device research models" (persisted, default off).
 - Hb result: amber `Experimental · research only` badge. The model status lists the reasons and, when relevant, "outside the model's training data". The record is saved locally with `resultMode = EXPERIMENTAL_RESEARCH_ONLY`. The sync contract accepts only synthetic demo records, so it stays on the phone.
 - Neonatal result: a separate amber card **"Research score · not bilirubin"** shows the score, the research threshold, the dataset class and an explanation. It is neither saved nor synced. The bilirubin field still reads "No valid model · estimate disabled".
+- Profiles: research output runs only on synthetic demo/research profiles, the same rule as the server's `EXPERIMENTAL_REQUIRES_RESEARCH_PROFILE`. On a real person's profile, the Hb result stays "No valid model" and the research score card is not shown, even with the toggle on (tested).
 - Failures: a feature error, model exception, non-finite or implausible output (Hb outside 2–25 g/dL) gives "The model could not produce a result … No value is shown". A demo fixture is never substituted. Demo fixtures remain available only on synthetic profiles and stay labelled `DEMO_SYNTHETIC`.
 
 ## 6. Artifact management
