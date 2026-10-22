@@ -11,10 +11,13 @@ import androidx.lifecycle.viewModelScope
 import `in`.abhaynayan.app.AbhayApp
 import `in`.abhaynayan.app.BuildConfig
 import `in`.abhaynayan.app.core.AnalysisOutcome
+import `in`.abhaynayan.app.core.AssetSource
 import `in`.abhaynayan.app.core.Biomarker
 import `in`.abhaynayan.app.core.CaptureAssessment
 import `in`.abhaynayan.app.core.CapturedFrames
+import `in`.abhaynayan.app.core.EdgeModelLoader
 import `in`.abhaynayan.app.core.FrameMetadata
+import `in`.abhaynayan.app.core.JaundiceClassScore
 import `in`.abhaynayan.app.core.Language
 import `in`.abhaynayan.app.core.MetadataForm
 import `in`.abhaynayan.app.core.MetadataValidator
@@ -23,7 +26,6 @@ import `in`.abhaynayan.app.core.ModelStatus
 import `in`.abhaynayan.app.core.RgbImage
 import `in`.abhaynayan.app.core.ScreeningType
 import `in`.abhaynayan.app.core.UnavailableBilirubinModel
-import `in`.abhaynayan.app.core.UnavailableHemoglobinModel
 import `in`.abhaynayan.app.core.WorkflowEngine
 import `in`.abhaynayan.app.core.WorkflowStage
 import `in`.abhaynayan.app.data.PatientEntity
@@ -68,6 +70,9 @@ data class WorkflowDraft(
     val demoCaseId: String? = null,
     val preview: ScreeningEntity? = null,
     val modelStatus: ModelStatus? = null,
+    /** Research-only NJN dataset-class score shown beside (never instead of) the result; not saved or synced. */
+    val jaundiceClassScore: JaundiceClassScore? = null,
+    val jaundiceClassError: String? = null,
     val analysisError: String? = null,
     val saving: Boolean = false,
 )
@@ -113,8 +118,21 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     private var assessJob: Job? = null
 
-    val hemoglobinStatus: ModelStatus = ModelRegistry.status(Biomarker.HEMOGLOBIN)
+    private val assetSource = AssetSource { path ->
+        try { application.assets.open(path).bufferedReader().use { it.readText() } } catch (_: java.io.IOException) { null }
+    }
+    private val edge = MutableStateFlow(EdgeModelLoader.load(assetSource, app.settings.settings.value.experimentalModels))
+
+    val hemoglobinStatus: ModelStatus get() = edge.value.hemoglobin.status()
     val bilirubinStatus: ModelStatus = ModelRegistry.status(Biomarker.BILIRUBIN)
+    val jaundiceClassAvailable: Boolean get() = edge.value.jaundiceClass != null
+    val jaundiceClassProblems: List<String> get() = edge.value.jaundiceClassProblems
+
+    /** Reloads first (two small JSON assets) so screens recomposed by the settings change see the new status. */
+    fun setExperimentalModels(enabled: Boolean) {
+        edge.value = EdgeModelLoader.load(assetSource, enabled)
+        app.settings.update { it.copy(experimentalModels = enabled) }
+    }
 
     init {
         viewModelScope.launch { repo.ensureDemoProfiles() }
@@ -247,14 +265,27 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     metadata = MetadataValidator.toMetadata(d.type, d.form),
                     assessment = assessment, regionConfirmed = d.regionConfirmed,
                     demoCaseId = d.demoCaseId.takeIf { patient.isSyntheticDemo },
-                    hemoglobinModel = UnavailableHemoglobinModel(hemoglobinStatus),
+                    hemoglobinModel = edge.value.hemoglobin,
                     bilirubinModel = UnavailableBilirubinModel(bilirubinStatus),
                     workerId = s.workerLabel, phc = s.phcLabel,
                     screeningId = ScreeningRepository.newScreeningId(),
                 )
             }
+            // The jaundice-class score is separate research output: it never fills the bilirubin estimate.
+            val scorer = edge.value.jaundiceClass
+            val (classScore, classError) = if (outcome is AnalysisOutcome.Ready && d.type.biomarker == Biomarker.BILIRUBIN && scorer != null) {
+                withContext(Dispatchers.Default) {
+                    try {
+                        val input = WorkflowEngine.modelInput(assessment) ?: error("No usable region.")
+                        scorer.score(input) to null
+                    } catch (e: RuntimeException) {
+                        null to "The research jaundice-class model could not process this image (${e.javaClass.simpleName}). No score is shown."
+                    }
+                }
+            } else null to null
             when (outcome) {
-                is AnalysisOutcome.Ready -> edit { it.copy(preview = outcome.record, modelStatus = outcome.modelStatus, analysisError = null, stage = WorkflowStage.RESULT) }
+                is AnalysisOutcome.Ready -> edit { it.copy(preview = outcome.record, modelStatus = outcome.modelStatus, analysisError = null,
+                    jaundiceClassScore = classScore, jaundiceClassError = classError, stage = WorkflowStage.RESULT) }
                 is AnalysisOutcome.Blocked -> edit { it.copy(analysisError = outcome.message) }
                 is AnalysisOutcome.InferenceFailed -> edit { it.copy(analysisError = outcome.message) }
             }

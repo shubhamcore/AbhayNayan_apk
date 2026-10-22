@@ -42,10 +42,14 @@ object ImageQualityChecker {
     const val MIN_SHARPNESS = 8.0
     const val MIN_ROI_STDDEV = 3.0
 
+    /** Same limit as the server gate (backend/app/ml/quality.py) so edge and server accept the same segmented images. */
+    const val MAX_CLIPPED_FRACTION_MASKED = .25
+
     fun check(image: RgbImage, roi: PixelRect): QualityReport {
         if (image.width < MIN_DIMENSION || image.height < MIN_DIMENSION) {
             return QualityReport(listOf(QualityIssue.RESOLUTION_TOO_LOW), 0.0, 0.0, 0.0, 0.0)
         }
+        if (image.hasTransparency()) return checkMasked(image)
         val issues = mutableListOf<QualityIssue>()
         val wholeLuma = meanLuma(image, PixelRect(0, 0, image.width, image.height))
         if (wholeLuma < DARK_LUMA) issues += QualityIssue.TOO_DARK
@@ -74,6 +78,37 @@ object ImageQualityChecker {
             issues += QualityIssue.BLURRY
         }
         return QualityReport(issues, wholeLuma, std, sharpness, clippedFraction)
+    }
+
+    /**
+     * Pre-segmented image (transparent background, e.g. an expert conjunctiva crop): the mask is the region, so
+     * brightness, clipping and contrast use opaque pixels only. Judged on the whole frame, the ~95 % transparent
+     * (black) background made 159 of 217 Eyes-defy-anemia crops fail as TOO_DARK.
+     */
+    private fun checkMasked(image: RgbImage): QualityReport {
+        var n = 0; var clipped = 0; var sum = 0.0; var sumSq = 0.0
+        var left = image.width; var top = image.height; var right = 0; var bottom = 0
+        for (y in 0 until image.height) for (x in 0 until image.width) {
+            val p = image.pixels[y * image.width + x]
+            if (((p ushr 24) and 0xff) < ColourFeatures.ALPHA_MIN) continue
+            val r = p ushr 16 and 0xff; val g = p ushr 8 and 0xff; val b = p and 0xff
+            if (r >= 250 || g >= 250 || b >= 250) clipped++
+            val l = luma(p)
+            sum += l; sumSq += l * l; n++
+            left = minOf(left, x); top = minOf(top, y); right = maxOf(right, x + 1); bottom = maxOf(bottom, y + 1)
+        }
+        if (n < ColourFeatures.MIN_VALID_PIXELS) return QualityReport(listOf(QualityIssue.TARGET_NOT_VISIBLE), 0.0, 0.0, 0.0, 0.0)
+        val mean = sum / n
+        val std = sqrt((sumSq / n - mean * mean).coerceAtLeast(0.0))
+        val clippedFraction = clipped.toDouble() / n
+        val issues = mutableListOf<QualityIssue>()
+        if (mean < DARK_LUMA) issues += QualityIssue.TOO_DARK
+        if (mean > BRIGHT_LUMA) issues += QualityIssue.TOO_BRIGHT
+        if (clippedFraction > MAX_CLIPPED_FRACTION_MASKED && QualityIssue.TOO_BRIGHT !in issues) issues += QualityIssue.GLARE_CLIPPING
+        if (std < MIN_ROI_STDDEV) issues += QualityIssue.TARGET_NOT_VISIBLE
+        val sharpness = laplacianVariance(image, PixelRect(left, top, right, bottom))
+        if (sharpness < MIN_SHARPNESS && QualityIssue.TARGET_NOT_VISIBLE !in issues && QualityIssue.TOO_DARK !in issues) issues += QualityIssue.BLURRY
+        return QualityReport(issues, mean, std, sharpness, clippedFraction)
     }
 
     /** Variance of a 4-neighbour Laplacian on luma inside the ROI (0–255 scale). */

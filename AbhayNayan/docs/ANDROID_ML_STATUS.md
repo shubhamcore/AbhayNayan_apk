@@ -1,5 +1,7 @@
 # Android ML status
 
+> **Update, 22 October 2026.** On-device research models (`hb-ridge-cf`, `njn-logreg-cf`) are now implemented in pure Kotlin and integrated behind Settings → *Research models (developer)*, which is off by default. The model files are not in Git, and bilirubin is still disabled. Read [edge_ai.md](edge_ai.md) for the current state. The rest of this page records the 10 October audit; where it says "no runtime", that now means "no *tensor* runtime".
+
 **Status on 10 October 2026: no biomarker model is deployed in the Android app.** Both workflows run in `DISABLED_NO_VALID_MODEL` mode for real profiles. Synthetic demo profiles can attach a fixed fixture (`DEMO_SYNTHETIC`). The fixture is never calculated from the photo.
 
 ## Result modes

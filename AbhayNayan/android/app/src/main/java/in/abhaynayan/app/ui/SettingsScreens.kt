@@ -26,6 +26,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import `in`.abhaynayan.app.BuildConfig
+import `in`.abhaynayan.app.core.Biomarker
 import `in`.abhaynayan.app.core.ModelRegistry
 import `in`.abhaynayan.app.core.ModelStatus
 import `in`.abhaynayan.app.core.ReferralRules
@@ -86,6 +87,21 @@ fun SettingsScreen(
                     SecondaryButton("Save worker details", { vm.saveWorker(worker, phc) }, Modifier.fillMaxWidth())
                 }
             }
+            item {
+                SectionCard(title = "Research models (developer)", container = Palette.AmberSurface, border = Palette.AmberText.copy(alpha = .35f)) {
+                    Row(Modifier.fillMaxWidth().heightIn(min = MinTouch).toggleable(settings.experimentalModels, role = Role.Switch) { vm.setExperimentalModels(it) },
+                        verticalAlignment = Alignment.CenterVertically) {
+                        Text("Use experimental on-device research models", style = MaterialTheme.typography.bodyLarge, color = Palette.Navy, modifier = Modifier.weight(1f))
+                        Switch(checked = settings.experimentalModels, onCheckedChange = null)
+                    }
+                    InfoText("Research only. Values are labelled EXPERIMENTAL, are not measurements, and must never guide care. " +
+                        "Models run on this phone; no photo is uploaded. Models are only present in locally built research APKs.", Palette.AmberText)
+                    if (settings.experimentalModels) {
+                        InfoText(if (vm.jaundiceClassAvailable) "Newborn jaundice-class research score: available (NJN dataset class, not bilirubin)."
+                        else "Newborn jaundice-class research score: unavailable. ${vm.jaundiceClassProblems.joinToString(" ")}", Palette.Muted)
+                    }
+                }
+            }
             item { ModelStatusCard(hbStatus, biliStatus) }
             item {
                 SectionCard(title = "About") {
@@ -118,6 +134,7 @@ fun ModelStatusCard(hbStatus: ModelStatus, biliStatus: ModelStatus) {
     SectionCard(title = "Model status and provenance") {
         listOf(hbStatus, biliStatus).forEach { st ->
             KeyValue(st.biomarker.displayName, "${st.mode.name} — ${st.mode.label}")
+            st.reasons.forEach { InfoText("• $it", Palette.Muted) }
         }
         ModelRegistry.inspectedCandidates.forEach { c ->
             Column(Modifier.padding(top = 6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -125,7 +142,7 @@ fun ModelStatusCard(hbStatus: ModelStatus, biliStatus: ModelStatus) {
                 InfoText("${c.biomarker.displayName} · ${c.kind}", Palette.Muted)
                 InfoText("Inputs: ${c.inputs}", Palette.Muted)
                 InfoText("Evidence: ${c.evidence}", Palette.Muted)
-                InfoText("Not deployed: ${c.whyNotDeployed}")
+                InfoText("${if (c.biomarker == Biomarker.HEMOGLOBIN && "research" in c.whyNotDeployed.lowercase()) "Status" else "Not deployed"}: ${c.whyNotDeployed}")
             }
         }
         InfoText("Validated mode cannot be switched on in this build. It requires a model card, validation evidence, and authorization.", Palette.Muted)

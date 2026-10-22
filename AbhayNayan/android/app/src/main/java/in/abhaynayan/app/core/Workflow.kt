@@ -113,7 +113,7 @@ object WorkflowEngine {
         if (!status.mode.producesEstimate) {
             return AnalysisOutcome.Ready(base.copy(referralUrgency = urgency.name, modelVersion = status.version ?: "none"), status)
         }
-        val roi = assessment.optical?.roi ?: return AnalysisOutcome.InferenceFailed("The target region could not be extracted. Retake.")
+        val roi = modelInput(assessment) ?: return AnalysisOutcome.InferenceFailed("The target region could not be extracted. Retake.")
         val value = try {
             when (type.biomarker) {
                 Biomarker.HEMOGLOBIN -> ModelOutputValidator.validate(Biomarker.HEMOGLOBIN, floatArrayOf(hemoglobinModel.estimateGramsPerDecilitre(roi).toFloat()))
@@ -125,11 +125,25 @@ object WorkflowEngine {
         } catch (e: RuntimeException) {
             return AnalysisOutcome.InferenceFailed("The model could not produce a result (${e.javaClass.simpleName}). No value is shown. Retry or continue without an estimate.")
         }
+        val ood = (hemoglobinModel as? LinearColourHemoglobinModel)?.lastOutOfDistribution.orEmpty()
+            .takeIf { type.biomarker == Biomarker.HEMOGLOBIN }.orEmpty()
+        val shown = if (ood.isEmpty()) status else status.copy(reasons = status.reasons +
+            "This image is outside the model's training data (${ood.take(4).joinToString()}); treat the value as unreliable.")
         return AnalysisOutcome.Ready(base.copy(
             estimate = value, resultMode = status.mode.name, modelMode = status.mode.name,
             modelVersion = "${status.modelName} ${status.version.orEmpty()}".trim(), referralUrgency = urgency.name,
-        ), status)
+        ), shown)
     }
+
+    /**
+     * Raw ambient colours for colour models. Never the flash-differential preview: that image is clipped and
+     * normalised for display. A pre-segmented image (transparent background) is used whole because its mask is
+     * the region; otherwise the confirmed manual guide is cropped from the ambient frame.
+     */
+    fun modelInput(assessment: CaptureAssessment): RgbImage? = try {
+        val ambient = assessment.frames.ambient
+        if (ambient.hasTransparency()) ambient else OpticalPipeline.crop(ambient, assessment.roi)
+    } catch (_: IllegalArgumentException) { null }
 
     /** Synthetic colour chart frames for demos without a camera; equal metadata, 100 ms apart. */
     fun syntheticFrames(): CapturedFrames {

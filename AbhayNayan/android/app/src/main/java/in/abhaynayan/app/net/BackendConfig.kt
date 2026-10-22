@@ -49,6 +49,8 @@ data class AppSettings(
     val language: Language,
     /** True only after the user saved a backend in Settings; otherwise the build default applies. */
     val backendExplicit: Boolean = false,
+    /** Developer opt-in for research-only on-device models. Off by default; never a clinical setting. */
+    val experimentalModels: Boolean = false,
 )
 
 /** Plain SharedPreferences: these values are not secrets (no API keys are ever stored on the phone). */
@@ -68,6 +70,7 @@ class SettingsStore(context: Context, private val defaultBackendUrl: String) {
         workerLabel = prefs.getString(KEY_WORKER, "demo-worker") ?: "demo-worker",
         phcLabel = prefs.getString(KEY_PHC, "Demo PHC") ?: "Demo PHC",
         language = Language.fromCode(prefs.getString(KEY_LANGUAGE, "en")),
+        experimentalModels = prefs.getBoolean(KEY_EXPERIMENTAL_MODELS, false),
         )
     }
 
@@ -83,6 +86,7 @@ class SettingsStore(context: Context, private val defaultBackendUrl: String) {
             putString(KEY_PHC, next.phcLabel)
             putString(KEY_LANGUAGE, next.language.code)
             putBoolean(KEY_EXPLICIT, next.backendExplicit)
+            putBoolean(KEY_EXPERIMENTAL_MODELS, next.experimentalModels)
         }
         state.value = next
     }
@@ -99,6 +103,7 @@ class SettingsStore(context: Context, private val defaultBackendUrl: String) {
         const val KEY_PHC = "phc_label"
         const val KEY_LANGUAGE = "language"
         const val KEY_EXPLICIT = "backend_explicit"
+        const val KEY_EXPERIMENTAL_MODELS = "experimental_models"
     }
 }
 

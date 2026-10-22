@@ -85,6 +85,7 @@ fun WorkflowScreen(
                     if (preview != null) {
                         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                             ResultDetails(preview, draft.modelStatus)
+                            JaundiceClassCard(draft)
                             InfoText("Not saved yet. Saving creates the screening report (PDF), counselling, and referral.")
                             ActionRow {
                                 SecondaryButton(s.back, { vm.setStage(WorkflowStage.ANALYSIS) }, Modifier.weight(1f))
@@ -367,6 +368,25 @@ private fun TechnicalDetails(a: CaptureAssessment) {
             KeyValue("CIE L*a*b*", "%.1f / %.1f / %.1f".format(Locale.ROOT, f.labLStar, f.labAStar, f.labBStar))
         }
         InfoText("Engineering values only. They are not calibrated and are not converted into hemoglobin or bilirubin.", Palette.Muted)
+    }
+}
+
+/** Separate research panel: the NJN dataset-class score never becomes the bilirubin estimate. */
+@Composable
+private fun JaundiceClassCard(draft: WorkflowDraft) {
+    val score = draft.jaundiceClassScore
+    val error = draft.jaundiceClassError
+    if (score == null && error == null) return
+    SectionCard(title = "Research score · not bilirubin", container = Palette.AmberSurface, border = Palette.AmberText.copy(alpha = .35f)) {
+        if (score != null) {
+            KeyValue("NJN dataset class score", "%.2f (research threshold %.2f)".format(Locale.ROOT, score.score, score.threshold))
+            KeyValue("Dataset class at research threshold", if (score.jaundiceLike) "jaundice-like" else "normal-like")
+            KeyValue("Model", score.modelVersion)
+            if (score.outOfDistribution.isNotEmpty()) InfoText("This image is outside the training data range (${score.outOfDistribution.take(4).joinToString()}). Treat the score as unreliable.", Palette.RedText)
+        }
+        error?.let { ErrorText(it) }
+        InfoText("Trained on folder labels (jaundice/normal) of one public newborn photo set with no bilirubin values and no patient IDs. " +
+            "It is not a bilirubin estimate and not a diagnosis. It is not saved or synced. Follow local protocol and measure bilirubin.", Palette.AmberText)
     }
 }
 

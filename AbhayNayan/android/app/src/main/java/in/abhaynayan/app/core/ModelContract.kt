@@ -38,6 +38,10 @@ enum class Biomarker(val displayName: String, val unit: String) {
 /**
  * Model card fields that must accompany any on-device artifact (assets/models/<biomarker>/metadata.json).
  * Parsing is strict: an incomplete card keeps inference disabled.
+ *
+ * Two input kinds are accepted: `tensor` (an image tensor, e.g. a future TFLite model: input_shape,
+ * input_dtype and channel_order are required) and `colour_features` (the cf-v1 feature vector of
+ * [ColourFeatures]: feature_version, feature_count and artifact_sha256 of model.json are required).
  */
 data class ModelArtifactMetadata(
     val name: String,
@@ -58,8 +62,13 @@ data class ModelArtifactMetadata(
     val approvalReference: String?,
     val redistributionApproved: Boolean,
     val limitations: List<String>,
+    val inputKind: String = INPUT_TENSOR,
+    val featureVersion: String? = null,
+    val artifactSha256: String? = null,
 ) {
     companion object {
+        const val INPUT_TENSOR = "tensor"
+        const val INPUT_COLOUR_FEATURES = "colour_features"
         const val STATUS_RESEARCH_ONLY = "RESEARCH_ONLY"
         const val STATUS_VALIDATED = "VALIDATED"
         private val DTYPES = setOf("float32", "uint8", "int8")
@@ -77,9 +86,17 @@ data class ModelArtifactMetadata(
             val name = str("name")
             val version = str("version")
             val biomarker = Biomarker.fromWire(str("biomarker")).also { if (it == null) problems += "Unknown biomarker." }
-            val inputShape = ints("input_shape")
-            val dtype = str("input_dtype")
-            val channelOrder = str("channel_order")
+            val inputKind = root.optString("input_kind", INPUT_TENSOR)
+            val tensor = inputKind == INPUT_TENSOR
+            if (!tensor && inputKind != INPUT_COLOUR_FEATURES) problems += "Unknown input_kind $inputKind."
+            val inputShape = if (tensor) ints("input_shape") else emptyList()
+            val dtype = if (tensor) str("input_dtype") else ""
+            val channelOrder = if (tensor) str("channel_order") else "RGB"
+            val featureVersion = if (!tensor) str("feature_version") else null
+            val artifactSha = if (!tensor) str("artifact_sha256") else null
+            if (!tensor && featureVersion.orEmpty().isNotEmpty() && featureVersion != ColourFeatures.VERSION) problems += "Unsupported feature_version $featureVersion."
+            if (!tensor && root.optInt("feature_count", -1) != ColourFeatures.NAMES.size) problems += "feature_count must be ${ColourFeatures.NAMES.size}."
+            if (!tensor && artifactSha.orEmpty().isNotEmpty() && !Regex("[0-9a-f]{64}").matches(artifactSha!!)) problems += "artifact_sha256 must be 64 hex characters."
             val normalization = str("normalization")
             val outputShape = ints("output_shape")
             val outputUnit = str("output_unit")
@@ -88,10 +105,10 @@ data class ModelArtifactMetadata(
             val subjects = root.optInt("subjects", 0)
             val samples = root.optInt("samples", 0)
             val status = str("validation_status")
-            if (inputShape.size != 4 || inputShape.drop(1).any { it <= 0 }) problems += "input_shape must be [batch, height, width, channels]."
-            if (inputShape.size == 4 && inputShape[3] != 3) problems += "Only 3-channel colour input is supported."
-            if (dtype.isNotEmpty() && dtype !in DTYPES) problems += "Unsupported input_dtype $dtype."
-            if (channelOrder.isNotEmpty() && channelOrder !in CHANNEL_ORDERS) problems += "Unsupported channel_order $channelOrder."
+            if (tensor && (inputShape.size != 4 || inputShape.drop(1).any { it <= 0 })) problems += "input_shape must be [batch, height, width, channels]."
+            if (tensor && inputShape.size == 4 && inputShape[3] != 3) problems += "Only 3-channel colour input is supported."
+            if (tensor && dtype.isNotEmpty() && dtype !in DTYPES) problems += "Unsupported input_dtype $dtype."
+            if (tensor && channelOrder.isNotEmpty() && channelOrder !in CHANNEL_ORDERS) problems += "Unsupported channel_order $channelOrder."
             if (outputShape.isEmpty() || outputShape.any { it <= 0 && it != -1 } || outputShape.fold(1) { a, b -> a * maxOf(b, 1) } != 1) {
                 problems += "Output must be a single scalar estimate."
             }
@@ -105,7 +122,7 @@ data class ModelArtifactMetadata(
                 name, version, biomarker, inputShape, dtype, channelOrder, normalization, outputShape, outputUnit,
                 runtime, labelSource, subjects, samples, true, status,
                 root.optString("approval_reference", "").ifBlank { null },
-                root.optBoolean("redistribution_approved", false), limitations,
+                root.optBoolean("redistribution_approved", false), limitations, inputKind, featureVersion, artifactSha,
             ) to emptyList()
         }
     }
@@ -139,7 +156,7 @@ object ModelModeResolver {
     ): ModelStatus {
         val reasons = mutableListOf<String>()
         if (!artifactPresent) reasons += "No ${expected.displayName.lowercase()} model artifact is bundled."
-        if (!runtimeAvailable) reasons += "No on-device inference runtime is included in this build."
+        if (!runtimeAvailable) reasons += "This build has no on-device runtime for this model format."
         if (metadata == null) reasons += if (metadataProblems.isEmpty()) "No model card (metadata.json) is bundled." else "Model card rejected: ${metadataProblems.joinToString(" ")}"
         if (metadata != null && metadata.biomarker != expected) reasons += "Artifact is a ${metadata.biomarker.displayName} model; it cannot be used for ${expected.displayName}."
         val name = metadata?.name ?: "none"
@@ -191,18 +208,29 @@ object ModelRegistry {
             whyNotDeployed = "Negative test R²; saved only as an ephemeral Kaggle .keras file with no TFLite export or model card; trained on expert-segmented crops that the phone does not produce.",
         ),
         ModelCandidate(
+            name = "hb-ridge-cf 1.0.0-research (colour-feature Ridge regression)",
+            biomarker = Biomarker.HEMOGLOBIN,
+            kind = "Ridge regression on 25 cf-v1 colour features; pure Kotlin, no runtime",
+            inputs = "Expert-segmented palpebral conjunctiva crops (Eyes-defy-anemia, one standardized capture device)",
+            evidence = "163 training patients; held-out test 54 patients: MAE 1.30 g/dL (95% CI 1.04–1.58), R² 0.51. " +
+                "On 110 children from 3 unseen Ghanaian hospitals (CP-AnemiC): MAE 2.07 g/dL, R² −0.64 (worse than the mean).",
+            artifactInApk = false,
+            whyNotDeployed = "Research-only: needs a locally built research APK plus the developer opt-in. It fails on a different " +
+                "population/device, over-estimates low Hb (7–10 g/dL by ≈2.7 g/dL), and phone crops are not the segmented input it was trained on.",
+        ),
+        ModelCandidate(
             name = "No bilirubin model",
             biomarker = Biomarker.BILIRUBIN,
             kind = "—",
             inputs = "478 forehead/sternum JPEGs (Neonatal Jaundice Assessment dataset)",
-            evidence = "No bilirubin label table exists in the archive; images are skin, not sclera.",
+            evidence = "No bilirubin label table exists in the archive; images are skin, not sclera. NJN has only jaundice/normal folder classes.",
             artifactInApk = false,
             whyNotDeployed = "Without ground-truth bilirubin labels no model can be trained or evaluated. Labels must not be invented.",
         ),
     )
 
-    /** This build has no on-device runtime and never permits validated mode. */
-    const val RUNTIME_AVAILABLE = false
+    /** Runtimes this build can execute. There is no tensor runtime (TFLite/LiteRT); validated mode is never permitted. */
+    val SUPPORTED_RUNTIMES: Set<String> = setOf("kotlin-linear-cf-v1")
     const val VALIDATED_MODE_ALLOWED = false
 
     fun status(
@@ -217,7 +245,7 @@ object ModelRegistry {
             metadata = metadata,
             metadataProblems = problems,
             artifactPresent = artifactPresent,
-            runtimeAvailable = RUNTIME_AVAILABLE,
+            runtimeAvailable = metadata?.runtime in SUPPORTED_RUNTIMES,
             experimentalOptIn = experimentalOptIn,
             validatedModeAllowedByBuild = VALIDATED_MODE_ALLOWED,
             authorization = null,
