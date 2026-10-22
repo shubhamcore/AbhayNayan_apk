@@ -53,6 +53,7 @@ import `in`.abhaynayan.app.core.PregnancyStatus
 import `in`.abhaynayan.app.core.ReferralRules
 import `in`.abhaynayan.app.core.RgbImage
 import `in`.abhaynayan.app.core.ScreeningType
+import `in`.abhaynayan.app.core.WorkflowEngine
 import `in`.abhaynayan.app.core.WorkflowStage
 import `in`.abhaynayan.app.data.PatientEntity
 import `in`.abhaynayan.app.data.SubjectKind
@@ -393,7 +394,7 @@ private fun JaundiceClassCard(draft: WorkflowDraft) {
 @Composable
 private fun AnalysisStage(draft: WorkflowDraft, patient: PatientEntity?, vm: AppViewModel) {
     val s = LocalStrings.current
-    val status: ModelStatus = if (draft.type == ScreeningType.MATERNAL_ANEMIA) vm.hemoglobinStatus else vm.bilirubinStatus
+    val status: ModelStatus = WorkflowEngine.statusFor(if (draft.type == ScreeningType.MATERNAL_ANEMIA) vm.hemoglobinStatus else vm.bilirubinStatus, patient)
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("Analysis", style = MaterialTheme.typography.titleLarge, color = Palette.Navy)
         SectionCard(title = "${status.biomarker.displayName} model status") {

@@ -62,7 +62,9 @@ fun ResultDetails(record: ScreeningEntity, modelStatus: ModelStatus?) {
             SectionCard(container = bg, border = fg.copy(alpha = .35f)) {
                 if (mode == ResultMode.DEMO_SYNTHETIC) Text("FIXED DEMO VALUE · NOT FROM IMAGE · NOT A LAB RESULT", style = MaterialTheme.typography.labelSmall, color = fg)
                 Text("${"%.1f".format(Locale.ROOT, estimate)} ${record.unit}", style = MaterialTheme.typography.headlineSmall, color = fg)
-                Text("${type.biomarker.displayName} · ${record.demoTag}", style = MaterialTheme.typography.bodyMedium, color = fg)
+                // demoTag is a fixture category; model outputs carry "NONE", which is not for display.
+                val label = if (mode == ResultMode.DEMO_SYNTHETIC) record.demoTag else "research estimate · not a measurement"
+                Text("${type.biomarker.displayName} · $label", style = MaterialTheme.typography.bodyMedium, color = fg)
             }
         } else {
             SectionCard(title = s.noEstimateTitle) {

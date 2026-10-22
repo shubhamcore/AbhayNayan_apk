@@ -61,7 +61,8 @@ object FhirExport {
         val estimate = record.estimate
         if (mode.producesEstimate && estimate != null) {
             observation.put("valueQuantity", JSONObject().put("value", estimate).put("unit", unit).put("system", "http://unitsofmeasure.org").put("code", unit))
-            observation.put("interpretation", JSONArray().put(JSONObject().put("text", record.demoTag)))
+            // Only fixtures have a category; a research model output has none ("NONE" is not an interpretation).
+            if (mode == ResultMode.DEMO_SYNTHETIC) observation.put("interpretation", JSONArray().put(JSONObject().put("text", record.demoTag)))
         } else {
             // No supported model output exists, so no value is fabricated.
             observation.put("dataAbsentReason", JSONObject().put("coding", JSONArray().put(
