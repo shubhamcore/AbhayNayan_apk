@@ -137,12 +137,21 @@ class EdgeModelsTest {
         assertEquals("NONE", ready.record.demoTag)
     }
 
+    @Test fun disabledResearchModelIsNotNamedAsTheRecordsModel() {
+        val ready = run(EdgeModelLoader.load(hbAssets(), experimentalOptIn = false).hemoglobin) as AnalysisOutcome.Ready
+        assertEquals(null, ready.record.estimate)
+        assertEquals("none", ready.record.modelVersion)
+    }
+
     @Test fun experimentalEdgeModelNeverAttachesToARealPerson() {
         val hb = EdgeModelLoader.load(hbAssets(), experimentalOptIn = true).hemoglobin
         val ready = run(hb, patient = TestFixtures.realPatient) as AnalysisOutcome.Ready
         assertEquals(null, ready.record.estimate)
         assertEquals(ResultMode.DISABLED_NO_VALID_MODEL.name, ready.record.resultMode)
         assertEquals(ResultMode.DISABLED_NO_VALID_MODEL, ready.modelStatus!!.mode)
+        // The Analysis screen uses the same rule, so it never shows "Experimental" for a real person.
+        assertEquals(ResultMode.DISABLED_NO_VALID_MODEL, WorkflowEngine.statusFor(hb.status(), TestFixtures.realPatient).mode)
+        assertEquals(ResultMode.EXPERIMENTAL_RESEARCH_ONLY, WorkflowEngine.statusFor(hb.status(), TestFixtures.demoPatient).mode)
     }
 
     @Test fun implausibleOrFailingModelNeverYieldsAValue() {

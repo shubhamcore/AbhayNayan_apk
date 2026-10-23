@@ -111,14 +111,11 @@ object WorkflowEngine {
         }
         val urgency = ReferralRules.urgency(type, metadata)
         if (!status.mode.producesEstimate) {
-            return AnalysisOutcome.Ready(base.copy(referralUrgency = urgency.name, modelVersion = status.version ?: "none"), status)
+            // No model ran, so the record names none (a disabled research artifact on disk did not produce it).
+            return AnalysisOutcome.Ready(base.copy(referralUrgency = urgency.name, modelVersion = "none"), status)
         }
-        // Same rule as the server (EXPERIMENTAL_REQUIRES_RESEARCH_PROFILE): research output never attaches to a real person.
         if (status.mode == ResultMode.EXPERIMENTAL_RESEARCH_ONLY && !patient.isSyntheticDemo) {
-            return AnalysisOutcome.Ready(base.copy(referralUrgency = urgency.name, modelVersion = "none"), status.copy(
-                mode = ResultMode.DISABLED_NO_VALID_MODEL,
-                reasons = listOf("Experimental research models run only on synthetic demo/research profiles, never on a real person's record."),
-            ))
+            return AnalysisOutcome.Ready(base.copy(referralUrgency = urgency.name, modelVersion = "none"), statusFor(status, patient))
         }
         val roi = modelInput(assessment) ?: return AnalysisOutcome.InferenceFailed("The target region could not be extracted. Retake.")
         val value = try {
@@ -141,6 +138,15 @@ object WorkflowEngine {
             modelVersion = "${status.modelName} ${status.version.orEmpty()}".trim(), referralUrgency = urgency.name,
         ), shown)
     }
+
+    /**
+     * The status a given profile actually gets. Same rule as the server (EXPERIMENTAL_REQUIRES_RESEARCH_PROFILE):
+     * research output never attaches to a real person, so screens and analysis must both show it as disabled.
+     */
+    fun statusFor(status: ModelStatus, patient: PatientEntity?): ModelStatus =
+        if (status.mode != ResultMode.EXPERIMENTAL_RESEARCH_ONLY || patient?.isSyntheticDemo == true) status
+        else status.copy(mode = ResultMode.DISABLED_NO_VALID_MODEL,
+            reasons = listOf("Experimental research models run only on synthetic demo/research profiles, never on a real person's record."))
 
     /**
      * Raw ambient colours for colour models. Never the flash-differential preview: that image is clipped and
